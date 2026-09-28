@@ -20,35 +20,72 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import androidx.documentfile.provider.DocumentFile;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.net.CookieHandler;
+import java.net.CookieManager;
+import java.net.CookiePolicy;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
-    private static final int REQ_TREE = 1301;
-    private static final int REQ_WRITE = 1302;
-    private static final long MAX_COPIED_BYTES = 12L * 1024L * 1024L * 1024L;
+    private static final int REQ_WRITE = 1401;
+
+    // Папки valve и cstrike из переданной пользователем публичной Google Drive папки.
+    private static final String VALVE_FOLDER_ID = "13ES7ete84kf1bqZEV36QUHUxWbpUPfyU";
+    private static final String CSTRIKE_FOLDER_ID = "1q0sK9tdBaXM2XiqOD1t7jdec3OuuSzE2";
+
+    private static final long MAX_TOTAL_BYTES = 12L * 1024L * 1024L * 1024L;
+    private static final int MAX_DEPTH = 24;
+    private static final int CONNECT_TIMEOUT_MS = 25_000;
+    private static final int READ_TIMEOUT_MS = 60_000;
+    private static final String USER_AGENT =
+            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Mobile Safari/537.36";
+
+    private static final Pattern FILE_LINK = Pattern.compile(
+            "https?://drive\\.google\\.com/file/d/([-\\w]{20,})/view",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern FOLDER_LINK = Pattern.compile(
+            "https?://drive\\.google\\.com/drive/folders/([-\\w]{20,})",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern DOWNLOAD_URL_JSON = Pattern.compile(
+            "\\\"downloadUrl\\\":\\\"([^\\\"]+)\\\"");
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final CookieManager cookieManager = new CookieManager(null, CookiePolicy.ACCEPT_ALL);
 
     private TextView status;
     private TextView detail;
     private ProgressBar progress;
-    private Button importButton;
+    private Button installButton;
     private Button permissionButton;
     private Button launchButton;
-    private boolean pendingTreePick = false;
+    private volatile boolean pendingInstall = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        CookieHandler.setDefault(cookieManager);
         getWindow().setStatusBarColor(Color.BLACK);
         getWindow().setNavigationBarColor(Color.BLACK);
         buildUi();
@@ -59,9 +96,9 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         refreshStatus();
-        if (pendingTreePick && hasFileAccess()) {
-            pendingTreePick = false;
-            pickGameFolder();
+        if (pendingInstall && hasFileAccess()) {
+            pendingInstall = false;
+            installAutomatically();
         }
     }
 
@@ -83,8 +120,8 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        root.addView(text("CS 1.6 — импорт с Google Drive", 27, Color.WHITE, true), lp(0, 6));
-        root.addView(text("Выбери папку, где лежат valve и cstrike — остальное приложение сделает само", 15,
+        root.addView(text("CS 1.6 Android — OneTap", 27, Color.WHITE, true), lp(0, 6));
+        root.addView(text("Сам скачает valve + cstrike из твоей Drive-папки и установит их для Xash3D", 15,
                 Color.rgb(169, 178, 192), false), lp(0, 22));
 
         LinearLayout card = card();
@@ -102,20 +139,20 @@ public class MainActivity extends Activity {
         progress.setIndeterminate(true);
         progress.setVisibility(View.GONE);
         card.addView(progress, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(5)));
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(6)));
 
         permissionButton = button("1. Разрешить доступ к памяти");
         permissionButton.setOnClickListener(v -> requestFileAccess(false));
         root.addView(permissionButton, lp(0, 10));
 
-        importButton = button("2. Выбрать папку CS 1.6 и установить");
-        importButton.setOnClickListener(v -> {
-            if (hasFileAccess()) pickGameFolder();
+        installButton = button("2. Скачать и установить CS 1.6");
+        installButton.setOnClickListener(v -> {
+            if (hasFileAccess()) installAutomatically();
             else requestFileAccess(true);
         });
-        root.addView(importButton, lp(0, 10));
+        root.addView(installButton, lp(0, 10));
 
-        Button checkButton = secondaryButton("Проверить установленные файлы");
+        Button checkButton = secondaryButton("Проверить установку");
         checkButton.setOnClickListener(v -> refreshStatus());
         root.addView(checkButton, lp(0, 10));
 
@@ -125,15 +162,13 @@ public class MainActivity extends Activity {
 
         LinearLayout info = card();
         root.addView(info, lp(0, 0));
-        info.addView(text("Как выбрать твою папку из Drive", 16, Color.WHITE, true), lp(0, 8));
+        info.addView(text("Что делает эта сборка", 16, Color.WHITE, true), lp(0, 8));
         TextView help = text(
-                "1) Нажми «Выбрать папку CS 1.6».\n" +
-                "2) В системном выборе файлов открой Google Drive.\n" +
-                "3) Выбери корневую папку из твоей ссылки — ту, где рядом лежат папки valve и cstrike.\n\n" +
-                "Приложение скопирует только valve и cstrike в:\n" +
-                "Внутренняя память/xash/valve\n" +
-                "Внутренняя память/xash/cstrike\n\n" +
-                "Windows-файлы рядом с ними (hl.exe, dll из корня и т.п.) не нужны и не копируются.",
+                "Никакие ZIP и выбор папки больше не нужны. Приложение напрямую использует две папки valve/cstrike из той Google Drive-ссылки, которую ты дал.\n\n" +
+                "Установка идёт в:\n" +
+                "/storage/emulated/0/xash/valve\n" +
+                "/storage/emulated/0/xash/cstrike\n\n" +
+                "Движок Xash3D FWGS и CS16Client ставятся отдельными APK. После них этот установщик докачивает игровые данные и запускает клиент.",
                 14, Color.rgb(180, 190, 203), false);
         help.setLineSpacing(0, 1.15f);
         info.addView(help, lp(0, 0));
@@ -141,11 +176,11 @@ public class MainActivity extends Activity {
         setContentView(scroll);
     }
 
-    private void requestFileAccess(boolean thenPickTree) {
-        pendingTreePick = thenPickTree;
+    private void requestFileAccess(boolean thenInstall) {
+        pendingInstall = thenInstall;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (Environment.isExternalStorageManager()) {
-                if (thenPickTree) pickGameFolder();
+                if (thenInstall) installAutomatically();
                 return;
             }
             try {
@@ -157,7 +192,7 @@ public class MainActivity extends Activity {
             }
         } else {
             if (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
-                if (thenPickTree) pickGameFolder();
+                if (thenInstall) installAutomatically();
             } else {
                 requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQ_WRITE);
             }
@@ -170,9 +205,9 @@ public class MainActivity extends Activity {
         if (requestCode == REQ_WRITE) {
             boolean ok = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
             refreshStatus();
-            if (ok && pendingTreePick) {
-                pendingTreePick = false;
-                pickGameFolder();
+            if (ok && pendingInstall) {
+                pendingInstall = false;
+                installAutomatically();
             }
         }
     }
@@ -184,66 +219,80 @@ public class MainActivity extends Activity {
         return checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
     }
 
-    private void pickGameFolder() {
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION |
-                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION |
-                Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
-        startActivityForResult(intent, REQ_TREE);
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == REQ_TREE && resultCode == RESULT_OK && data != null && data.getData() != null) {
-            Uri treeUri = data.getData();
-            try {
-                int flags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-                getContentResolver().takePersistableUriPermission(treeUri, flags);
-            } catch (Exception ignored) {
-            }
-            installFromFolder(treeUri);
+    private void installAutomatically() {
+        if (!hasFileAccess()) {
+            requestFileAccess(true);
+            return;
         }
-    }
 
-    private void installFromFolder(Uri treeUri) {
-        setBusy(true, "Ищу valve и cstrike…");
+        setBusy(true, "Читаю структуру твоей Google Drive папки…");
         executor.execute(() -> {
             try {
-                DocumentFile selected = DocumentFile.fromTreeUri(this, treeUri);
-                if (selected == null || !selected.isDirectory()) {
-                    throw new Exception("Не удалось открыть выбранную папку");
-                }
-
-                DocumentFile valve = findDirectChildDir(selected, "valve");
-                DocumentFile cstrike = findDirectChildDir(selected, "cstrike");
-
-                if (valve == null || cstrike == null) {
-                    throw new Exception("В выбранной папке должны лежать две папки рядом: valve и cstrike");
-                }
-
                 File xashRoot = getXashRoot();
                 if (!xashRoot.exists() && !xashRoot.mkdirs()) {
                     throw new Exception("Не удалось создать " + xashRoot.getAbsolutePath());
                 }
 
-                CopyStats stats = new CopyStats();
-                copyDirectory(valve, new File(xashRoot, "valve"), xashRoot, stats);
-                copyDirectory(cstrike, new File(xashRoot, "cstrike"), xashRoot, stats);
+                List<RemoteFile> files = new ArrayList<>();
+                Set<String> visitedFolders = new HashSet<>();
 
-                int copiedFiles = stats.files;
-                long copiedMb = stats.bytes / (1024L * 1024L);
+                discoverFolder(VALVE_FOLDER_ID, "valve", files, visitedFolders, 0);
+                discoverFolder(CSTRIKE_FOLDER_ID, "cstrike", files, visitedFolders, 0);
+
+                if (files.isEmpty()) {
+                    throw new Exception("Google Drive вернул пустую папку. Проверь, что ссылка всё ещё открыта по доступу 'всем по ссылке'.");
+                }
+
+                int total = files.size();
+                runOnUiThread(() -> {
+                    progress.setIndeterminate(false);
+                    progress.setMax(total);
+                    progress.setProgress(0);
+                    status.setText("Скачиваю игру…");
+                    detail.setText("Найдено файлов: " + total + "\nИсточник: твоя Google Drive папка");
+                });
+
+                long totalBytes = 0;
+                int done = 0;
+                for (RemoteFile remote : files) {
+                    if (Thread.currentThread().isInterrupted()) {
+                        throw new InterruptedException("Установка прервана");
+                    }
+
+                    File out = safeOutputFile(xashRoot, remote.relativePath);
+                    long downloaded = downloadWithRetry(remote.id, out, totalBytes);
+                    totalBytes += downloaded;
+                    if (totalBytes > MAX_TOTAL_BYTES) {
+                        throw new Exception("Объём данных превысил безопасный лимит 12 ГБ");
+                    }
+
+                    done++;
+                    int shownDone = done;
+                    long shownMb = totalBytes / (1024L * 1024L);
+                    String shownPath = remote.relativePath;
+                    runOnUiThread(() -> {
+                        progress.setProgress(shownDone);
+                        detail.setText(
+                                "Файл " + shownDone + " из " + total + "\n" +
+                                shownPath + "\n" +
+                                "Скачано примерно: " + shownMb + " МБ");
+                    });
+                }
+
+                verifyGameFiles();
+                int finalDone = done;
+                long finalMb = totalBytes / (1024L * 1024L);
                 runOnUiThread(() -> {
                     setBusy(false, null);
                     refreshStatus();
                     Toast.makeText(this,
-                            "Готово: " + copiedFiles + " файлов, примерно " + copiedMb + " МБ",
+                            "Готово: " + finalDone + " файлов, примерно " + finalMb + " МБ",
                             Toast.LENGTH_LONG).show();
                 });
             } catch (Exception e) {
                 runOnUiThread(() -> {
                     setBusy(false, null);
-                    status.setText("Ошибка импорта");
+                    status.setText("Ошибка установки");
                     status.setTextColor(Color.rgb(255, 105, 105));
                     detail.setText(e.getMessage() == null ? e.toString() : e.getMessage());
                 });
@@ -251,77 +300,270 @@ public class MainActivity extends Activity {
         });
     }
 
-    private DocumentFile findDirectChildDir(DocumentFile parent, String wanted) {
-        for (DocumentFile child : parent.listFiles()) {
-            String name = child.getName();
-            if (child.isDirectory() && name != null && wanted.equalsIgnoreCase(name.trim())) {
-                return child;
-            }
-        }
-        return null;
-    }
+    private void discoverFolder(String folderId,
+                                String relativeDir,
+                                List<RemoteFile> files,
+                                Set<String> visitedFolders,
+                                int depth) throws Exception {
+        if (depth > MAX_DEPTH) throw new Exception("Слишком глубокая структура папок Drive");
+        if (!visitedFolders.add(folderId)) return;
 
-    private void copyDirectory(DocumentFile source, File destination, File xashRoot, CopyStats stats) throws Exception {
-        if (!destination.exists() && !destination.mkdirs()) {
-            throw new Exception("Не удалось создать папку " + destination.getAbsolutePath());
-        }
+        String listingUrl = "https://drive.google.com/embeddedfolderview?id=" + folderId;
+        String html = fetchText(listingUrl, 6 * 1024 * 1024);
+        Document doc = Jsoup.parse(html, listingUrl);
 
-        String allowedRoot = xashRoot.getCanonicalPath() + File.separator;
-        for (DocumentFile child : source.listFiles()) {
-            String name = child.getName();
-            if (name == null || name.isEmpty()) continue;
-            if (name.contains("/") || name.contains("\\") || name.equals(".") || name.equals("..")) {
-                throw new Exception("Некорректное имя файла: " + name);
-            }
+        Map<String, Child> children = new LinkedHashMap<>();
+        for (Element a : doc.select("a[href]")) {
+            String href = a.attr("href");
+            String name = sanitizeName(a.text());
+            if (name.isEmpty()) continue;
 
-            File out = new File(destination, name);
-            String canonical = out.getCanonicalPath();
-            if (!canonical.startsWith(allowedRoot)) {
-                throw new Exception("Небезопасный путь: " + name);
+            Matcher fileMatcher = FILE_LINK.matcher(href);
+            if (fileMatcher.find()) {
+                String id = fileMatcher.group(1);
+                children.putIfAbsent("f:" + id, new Child(id, name, false));
+                continue;
             }
 
-            if (child.isDirectory()) {
-                copyDirectory(child, out, xashRoot, stats);
-            } else if (child.isFile()) {
-                copyOneFile(child, out, stats);
-            }
-        }
-    }
-
-    private void copyOneFile(DocumentFile source, File out, CopyStats stats) throws Exception {
-        File parent = out.getParentFile();
-        if (parent != null && !parent.exists() && !parent.mkdirs()) {
-            throw new Exception("Не удалось создать " + parent.getAbsolutePath());
-        }
-
-        try (InputStream raw = getContentResolver().openInputStream(source.getUri())) {
-            if (raw == null) throw new Exception("Не удалось открыть " + source.getName());
-            try (BufferedInputStream in = new BufferedInputStream(raw, 128 * 1024);
-                 BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(out, false), 128 * 1024)) {
-                byte[] buffer = new byte[128 * 1024];
-                int read;
-                while ((read = in.read(buffer)) != -1) {
-                    stats.bytes += read;
-                    if (stats.bytes > MAX_COPIED_BYTES) throw new Exception("Слишком большой объём данных");
-                    bos.write(buffer, 0, read);
+            Matcher folderMatcher = FOLDER_LINK.matcher(href);
+            if (folderMatcher.find()) {
+                String id = folderMatcher.group(1);
+                if (!id.equals(folderId)) {
+                    children.putIfAbsent("d:" + id, new Child(id, name, true));
                 }
             }
         }
 
-        stats.files++;
-        if (stats.files % 40 == 0) {
-            int count = stats.files;
-            long mb = stats.bytes / (1024L * 1024L);
-            runOnUiThread(() -> detail.setText(
-                    "Копирую файлы из Google Drive…\n" +
-                    "Скопировано: " + count + " файлов • " + mb + " МБ\n" +
-                    "Не закрывай приложение до завершения."));
+        if (children.isEmpty()) {
+            String title = doc.title().toLowerCase(Locale.ROOT);
+            if (title.contains("sign in") || html.toLowerCase(Locale.ROOT).contains("request access")) {
+                throw new Exception("Нет публичного доступа к папке Google Drive: " + relativeDir);
+            }
         }
+
+        for (Child child : children.values()) {
+            String relative = relativeDir + "/" + child.name;
+            if (child.folder) {
+                discoverFolder(child.id, relative, files, visitedFolders, depth + 1);
+            } else {
+                files.add(new RemoteFile(child.id, relative));
+            }
+        }
+    }
+
+    private String fetchText(String urlString, int maxBytes) throws Exception {
+        HttpURLConnection conn = openConnection(urlString);
+        try {
+            int code = conn.getResponseCode();
+            if (code < 200 || code >= 400) {
+                throw new Exception("Drive вернул HTTP " + code);
+            }
+            try (InputStream raw = new BufferedInputStream(conn.getInputStream(), 64 * 1024);
+                 ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+                byte[] buf = new byte[64 * 1024];
+                int read;
+                int total = 0;
+                while ((read = raw.read(buf)) != -1) {
+                    total += read;
+                    if (total > maxBytes) throw new Exception("Слишком большой ответ Google Drive");
+                    out.write(buf, 0, read);
+                }
+                return out.toString("UTF-8");
+            }
+        } finally {
+            conn.disconnect();
+        }
+    }
+
+    private long downloadWithRetry(String fileId, File out, long alreadyDownloaded) throws Exception {
+        Exception last = null;
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try {
+                return downloadGoogleDriveFile(fileId, out, alreadyDownloaded);
+            } catch (Exception e) {
+                last = e;
+                File part = new File(out.getAbsolutePath() + ".part");
+                if (part.exists()) part.delete();
+                if (attempt < 3) Thread.sleep(800L * attempt);
+            }
+        }
+        throw new Exception("Не удалось скачать " + out.getName() + ": " +
+                (last == null ? "неизвестная ошибка" : last.getMessage()), last);
+    }
+
+    private long downloadGoogleDriveFile(String fileId, File out, long alreadyDownloaded) throws Exception {
+        File parent = out.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw new Exception("Не удалось создать папку " + parent.getAbsolutePath());
+        }
+
+        String currentUrl = "https://drive.google.com/uc?export=download&id=" + fileId;
+        HttpURLConnection conn = null;
+
+        for (int hop = 0; hop < 6; hop++) {
+            if (conn != null) conn.disconnect();
+            conn = openConnection(currentUrl);
+            int code = conn.getResponseCode();
+            if (code < 200 || code >= 400) {
+                throw new Exception("HTTP " + code + " для файла " + out.getName());
+            }
+
+            String disposition = conn.getHeaderField("Content-Disposition");
+            String contentType = conn.getContentType();
+            boolean attachment = disposition != null && disposition.toLowerCase(Locale.ROOT).contains("attachment");
+            boolean html = !attachment && contentType != null &&
+                    contentType.toLowerCase(Locale.ROOT).startsWith("text/html");
+
+            if (!html) break;
+
+            String page;
+            try (InputStream in = new BufferedInputStream(conn.getInputStream(), 32 * 1024);
+                 ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+                byte[] b = new byte[32 * 1024];
+                int n;
+                int total = 0;
+                while ((n = in.read(b)) != -1) {
+                    total += n;
+                    if (total > 4 * 1024 * 1024) throw new Exception("Страница подтверждения Drive слишком большая");
+                    bos.write(b, 0, n);
+                }
+                page = bos.toString("UTF-8");
+            }
+
+            String next = resolveConfirmationUrl(page, currentUrl);
+            if (next == null || next.equals(currentUrl)) {
+                throw new Exception("Google Drive не отдал ссылку на скачивание файла " + out.getName());
+            }
+            currentUrl = next;
+        }
+
+        if (conn == null) throw new Exception("Не удалось открыть файл " + out.getName());
+
+        File temp = new File(out.getAbsolutePath() + ".part");
+        long written = 0;
+        try (InputStream raw = new BufferedInputStream(conn.getInputStream(), 128 * 1024);
+             BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(temp, false), 128 * 1024)) {
+            byte[] buffer = new byte[128 * 1024];
+            int read;
+            while ((read = raw.read(buffer)) != -1) {
+                written += read;
+                if (alreadyDownloaded + written > MAX_TOTAL_BYTES) {
+                    throw new Exception("Объём данных превысил 12 ГБ");
+                }
+                bos.write(buffer, 0, read);
+            }
+        } finally {
+            conn.disconnect();
+        }
+
+        if (out.exists() && !out.delete()) {
+            throw new Exception("Не удалось заменить " + out.getAbsolutePath());
+        }
+        if (!temp.renameTo(out)) {
+            copyLocalFile(temp, out);
+            if (!temp.delete()) temp.deleteOnExit();
+        }
+        return written;
+    }
+
+    private String resolveConfirmationUrl(String html, String baseUrl) {
+        try {
+            Document doc = Jsoup.parse(html, baseUrl);
+            Element form = doc.selectFirst("form#download-form");
+            if (form != null) {
+                String action = form.absUrl("action");
+                if (action == null || action.isEmpty()) action = form.attr("action");
+                if (action != null && !action.isEmpty()) {
+                    StringBuilder url = new StringBuilder(action);
+                    boolean first = !action.contains("?");
+                    for (Element input : form.select("input[type=hidden][name]")) {
+                        String name = input.attr("name");
+                        String value = input.attr("value");
+                        url.append(first ? '?' : '&');
+                        first = false;
+                        url.append(URLEncoder.encode(name, "UTF-8"));
+                        url.append('=');
+                        url.append(URLEncoder.encode(value, "UTF-8"));
+                    }
+                    return url.toString().replace("&amp;", "&");
+                }
+            }
+
+            Element link = doc.selectFirst("a[href^=/uc?export=download]");
+            if (link != null) {
+                String href = link.attr("href").replace("&amp;", "&");
+                return "https://docs.google.com" + href;
+            }
+
+            Matcher matcher = DOWNLOAD_URL_JSON.matcher(html);
+            if (matcher.find()) {
+                return matcher.group(1)
+                        .replace("\\u003d", "=")
+                        .replace("\\u0026", "&")
+                        .replace("\\u0025", "%")
+                        .replace("\\/", "/");
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private HttpURLConnection openConnection(String urlString) throws Exception {
+        URL url = new URL(urlString);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setInstanceFollowRedirects(true);
+        conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+        conn.setReadTimeout(READ_TIMEOUT_MS);
+        conn.setRequestProperty("User-Agent", USER_AGENT);
+        conn.setRequestProperty("Accept", "*/*");
+        conn.setRequestProperty("Accept-Language", "en-US,en;q=0.8");
+        conn.setUseCaches(false);
+        return conn;
+    }
+
+    private File safeOutputFile(File root, String relativePath) throws Exception {
+        File out = new File(root, relativePath);
+        String rootCanonical = root.getCanonicalPath() + File.separator;
+        String outCanonical = out.getCanonicalPath();
+        if (!outCanonical.startsWith(rootCanonical)) {
+            throw new Exception("Небезопасный путь: " + relativePath);
+        }
+        return out;
+    }
+
+    private String sanitizeName(String name) {
+        if (name == null) return "";
+        String cleaned = name.replace('\u0000', ' ').trim();
+        cleaned = cleaned.replace('/', '_').replace('\\', '_');
+        if (cleaned.equals(".") || cleaned.equals("..")) return "_";
+        return cleaned;
+    }
+
+    private void copyLocalFile(File source, File target) throws Exception {
+        try (InputStream in = new BufferedInputStream(new java.io.FileInputStream(source), 128 * 1024);
+             BufferedOutputStream out = new BufferedOutputStream(new FileOutputStream(target, false), 128 * 1024)) {
+            byte[] buffer = new byte[128 * 1024];
+            int read;
+            while ((read = in.read(buffer)) != -1) out.write(buffer, 0, read);
+        }
+    }
+
+    private void verifyGameFiles() throws Exception {
+        File root = getXashRoot();
+        File valve = new File(root, "valve");
+        File cstrike = new File(root, "cstrike");
+        if (!valve.isDirectory()) throw new Exception("После загрузки отсутствует папка valve");
+        if (!cstrike.isDirectory()) throw new Exception("После загрузки отсутствует папка cstrike");
+        if (!new File(cstrike, "liblist.gam").isFile()) throw new Exception("Отсутствует cstrike/liblist.gam");
+        if (!new File(cstrike, "maps").isDirectory()) throw new Exception("Отсутствует cstrike/maps");
+        if (!new File(cstrike, "models").isDirectory()) throw new Exception("Отсутствует cstrike/models");
     }
 
     private void refreshStatus() {
         boolean access = hasFileAccess();
-        permissionButton.setText(access ? "✓ Доступ к памяти разрешён" : "1. Разрешить доступ к памяти");
+        if (permissionButton != null) {
+            permissionButton.setText(access ? "✓ Доступ к памяти разрешён" : "1. Разрешить доступ к памяти");
+        }
 
         File root = getXashRoot();
         File valve = new File(root, "valve");
@@ -330,18 +572,18 @@ public class MainActivity extends Activity {
         boolean hasCstrike = cstrike.isDirectory();
         boolean hasMaps = new File(cstrike, "maps").isDirectory();
         boolean hasModels = new File(cstrike, "models").isDirectory();
-        boolean hasGameMarker = new File(cstrike, "liblist.gam").isFile() || new File(cstrike, "gameinfo.txt").isFile();
+        boolean hasGameMarker = new File(cstrike, "liblist.gam").isFile();
         boolean clientInstalled = isAnyPackageInstalled("su.xash.cs16client.test", "su.xash.cs16client");
         boolean engineInstalled = isAnyPackageInstalled("su.xash.engine.test", "su.xash.engine");
 
-        if (hasValve && hasCstrike && (hasMaps || hasModels || hasGameMarker)) {
-            status.setText("✓ Файлы CS 1.6 найдены");
+        if (hasValve && hasCstrike && hasMaps && hasModels && hasGameMarker) {
+            status.setText("✓ CS 1.6 готова к запуску");
             status.setTextColor(Color.rgb(91, 214, 144));
         } else if (hasValve || hasCstrike) {
-            status.setText("Файлы установлены не полностью");
+            status.setText("Установка не завершена");
             status.setTextColor(Color.rgb(255, 194, 92));
         } else {
-            status.setText("Нужно импортировать игру");
+            status.setText("Игра ещё не установлена");
             status.setTextColor(Color.rgb(255, 194, 92));
         }
 
@@ -353,7 +595,7 @@ public class MainActivity extends Activity {
                 "   •   CS16Client: " + (clientInstalled ? "установлен" : "не найден") +
                 "\nПуть: " + root.getAbsolutePath());
 
-        launchButton.setEnabled(clientInstalled);
+        launchButton.setEnabled(clientInstalled && hasCstrike);
     }
 
     private File getXashRoot() {
@@ -380,27 +622,34 @@ public class MainActivity extends Activity {
                 return;
             }
         }
-        Toast.makeText(this, "CS16Client не найден. Сначала установи APK клиента.", Toast.LENGTH_LONG).show();
+        Toast.makeText(this, "CS16Client не установлен", Toast.LENGTH_LONG).show();
     }
 
     private void setBusy(boolean busy, String message) {
         progress.setVisibility(busy ? View.VISIBLE : View.GONE);
-        importButton.setEnabled(!busy);
+        if (busy) {
+            progress.setIndeterminate(true);
+        } else {
+            progress.setIndeterminate(true);
+            progress.setProgress(0);
+        }
+        installButton.setEnabled(!busy);
         permissionButton.setEnabled(!busy);
         launchButton.setEnabled(!busy && isAnyPackageInstalled("su.xash.cs16client.test", "su.xash.cs16client"));
-        if (busy && message != null) {
-            status.setText(message);
+        if (message != null) {
+            status.setText("Установка…");
             status.setTextColor(Color.WHITE);
+            detail.setText(message);
         }
     }
 
-    private TextView text(String value, int sizeSp, int color, boolean bold) {
-        TextView tv = new TextView(this);
-        tv.setText(value);
-        tv.setTextSize(sizeSp);
-        tv.setTextColor(color);
-        if (bold) tv.setTypeface(tv.getTypeface(), android.graphics.Typeface.BOLD);
-        return tv;
+    private TextView text(String value, int sp, int color, boolean bold) {
+        TextView v = new TextView(this);
+        v.setText(value);
+        v.setTextSize(sp);
+        v.setTextColor(color);
+        if (bold) v.setTypeface(v.getTypeface(), android.graphics.Typeface.BOLD);
+        return v;
     }
 
     private Button button(String label) {
@@ -408,34 +657,35 @@ public class MainActivity extends Activity {
         b.setText(label);
         b.setTextSize(15);
         b.setTextColor(Color.WHITE);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Color.rgb(47, 113, 230));
-        bg.setCornerRadius(dp(12));
-        b.setBackground(bg);
         b.setAllCaps(false);
-        b.setPadding(dp(12), dp(12), dp(12), dp(12));
+        b.setMinHeight(dp(54));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.rgb(35, 106, 224));
+        bg.setCornerRadius(dp(13));
+        b.setBackground(bg);
         return b;
     }
 
     private Button secondaryButton(String label) {
         Button b = button(label);
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Color.rgb(34, 40, 50));
-        bg.setStroke(dp(1), Color.rgb(70, 78, 92));
-        bg.setCornerRadius(dp(12));
+        bg.setColor(Color.rgb(32, 38, 48));
+        bg.setStroke(dp(1), Color.rgb(69, 79, 94));
+        bg.setCornerRadius(dp(13));
         b.setBackground(bg);
         return b;
     }
 
     private LinearLayout card() {
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(16), dp(16), dp(16), dp(16));
+        LinearLayout c = new LinearLayout(this);
+        c.setOrientation(LinearLayout.VERTICAL);
+        c.setPadding(dp(16), dp(16), dp(16), dp(16));
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Color.rgb(24, 29, 37));
-        bg.setCornerRadius(dp(14));
-        box.setBackground(bg);
-        return box;
+        bg.setColor(Color.rgb(22, 27, 35));
+        bg.setStroke(dp(1), Color.rgb(45, 54, 67));
+        bg.setCornerRadius(dp(16));
+        c.setBackground(bg);
+        return c;
     }
 
     private LinearLayout.LayoutParams lp(int top, int bottom) {
@@ -448,11 +698,28 @@ public class MainActivity extends Activity {
     }
 
     private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
+        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
     }
 
-    private static final class CopyStats {
-        int files = 0;
-        long bytes = 0;
+    private static final class Child {
+        final String id;
+        final String name;
+        final boolean folder;
+
+        Child(String id, String name, boolean folder) {
+            this.id = id;
+            this.name = name;
+            this.folder = folder;
+        }
+    }
+
+    private static final class RemoteFile {
+        final String id;
+        final String relativePath;
+
+        RemoteFile(String id, String relativePath) {
+            this.id = id;
+            this.relativePath = relativePath;
+        }
     }
 }

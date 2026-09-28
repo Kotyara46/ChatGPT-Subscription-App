@@ -1,0 +1,81 @@
+name: Package CS16 Game Data
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+    paths:
+      - ".github/workflows/package-cs16-gamedata.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install gdown
+        run: python3 -m pip install --disable-pip-version-check 'gdown>=5.2,<6'
+
+      - name: Download valve and cstrike from provided Drive folders
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          import gdown
+
+          os.makedirs("game-data", exist_ok=True)
+          sources = {
+              "valve": "13ES7ete84kf1bqZEV36QUHUxWbpUPfyU",
+              "cstrike": "1q0sK9tdBaXM2XiqOD1t7jdec3OuuSzE2",
+          }
+          for name, folder_id in sources.items():
+              output = os.path.join("game-data", name)
+              files = gdown.download_folder(
+                  id=folder_id,
+                  output=output,
+                  quiet=False,
+                  use_cookies=False,
+                  resume=True,
+                  retries=3,
+              )
+              if not files:
+                  raise SystemExit(f"No files downloaded for {name}")
+              print(name, len(files), "files")
+          PY
+
+      - name: Verify required files
+        shell: bash
+        run: |
+          test -d game-data/valve
+          test -d game-data/cstrike
+          test -f game-data/cstrike/liblist.gam
+          test -d game-data/cstrike/maps
+          test -d game-data/cstrike/models
+          echo "Valve files: $(find game-data/valve -type f | wc -l)"
+          echo "CStrike files: $(find game-data/cstrike -type f | wc -l)"
+          du -sh game-data/valve game-data/cstrike
+
+      - name: Create game data ZIP
+        shell: bash
+        run: |
+          cd game-data
+          zip -r -9 ../CS16-GameData.zip valve cstrike
+          cd ..
+          sha256sum CS16-GameData.zip | tee CS16-GameData.sha256
+          ls -lh CS16-GameData.zip
+
+      - name: Upload game data
+        uses: actions/upload-artifact@v4
+        with:
+          name: CS16-GameData
+          path: |
+            CS16-GameData.zip
+            CS16-GameData.sha256
+          if-no-files-found: error
+          retention-days: 7

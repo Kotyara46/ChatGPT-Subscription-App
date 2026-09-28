@@ -11,12 +11,14 @@
         <package android:name="su.xash.engine.test" />
         <package android:name="su.xash.cs16client" />
         <package android:name="su.xash.cs16client.test" />
+        <package android:name="com.kotyara.cs16client" />
+        <package android:name="com.kotyara.cs16client.test" />
     </queries>
 
     <application
         android:allowBackup="true"
         android:icon="@drawable/ic_logo"
-        android:label="CS16 OneTap"
+        android:label="Counter-Strike 1.6"
         android:roundIcon="@drawable/ic_logo"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar"
@@ -24,7 +26,8 @@
 
         <activity
             android:name=".MainActivity"
-            android:screenOrientation="portrait"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

@@ -15,7 +15,6 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.provider.Settings;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -165,7 +164,6 @@ public class MainActivity extends AppCompatActivity {
         if (initial == null || initial.isBefore(LocalDate.now())) {
             initial = LocalDate.now().plusDays(1);
         }
-        LocalDate finalInitial = initial;
         DatePickerDialog dialog = new DatePickerDialog(
                 this,
                 (view, year, month, dayOfMonth) -> {
@@ -238,7 +236,7 @@ public class MainActivity extends AppCompatActivity {
         GradientDrawable background = new GradientDrawable();
         background.setColor(withAlpha(color, 45));
         background.setCornerRadius(dp(18));
-        background.setStroke(dp(1), color);
+        background.setStroke((int) dp(1), color);
         statusBadge.setBackground(background);
         statusBadge.setTextColor(Color.WHITE);
     }

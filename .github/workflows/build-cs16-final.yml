@@ -1,0 +1,205 @@
+name: Build CS16 Android Final RU
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+    paths:
+      - ".github/workflows/build-cs16-final.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout launcher
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache zip
+          python3 -m pip install --disable-pip-version-check 'git+https://github.com/wkentaro/gdown.git@main'
+
+      - name: Download user's CS 1.6 data
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, gdown
+          os.makedirs('game-data', exist_ok=True)
+          sources = {
+              'valve': '13ES7ete84kf1bqZEV36QUHUxWbpUPfyU',
+              'cstrike': '1q0sK9tdBaXM2XiqOD1t7jdec3OuuSzE2',
+          }
+          for name, folder_id in sources.items():
+              out = os.path.join('game-data', name)
+              files = gdown.download_folder(id=folder_id, output=out, quiet=False, use_cookies=False, resume=True)
+              if not files:
+                  raise SystemExit(f'Не удалось скачать {name}')
+              print(name, len(files), 'files')
+          PY
+
+      - name: Verify complete game data
+        shell: bash
+        run: |
+          test -f game-data/cstrike/liblist.gam
+          test -d game-data/cstrike/maps
+          test -d game-data/cstrike/models
+          test -d game-data/cstrike/sprites
+          test -f game-data/cstrike/sprites/hud.txt
+          grep -q 'number_0' game-data/cstrike/sprites/hud.txt
+          test -f game-data/cstrike/resource/gameui_russian.txt
+          test -f game-data/cstrike/resource/serverbrowser_russian.txt
+          test -f game-data/valve/resource/valve_russian.txt
+          echo "Valve files: $(find game-data/valve -type f | wc -l)"
+          echo "CStrike files: $(find game-data/cstrike -type f | wc -l)"
+          du -sh game-data/valve game-data/cstrike
+
+      - name: Embed game data in final launcher
+        shell: bash
+        run: |
+          mkdir -p app/src/main/assets
+          cd game-data
+          zip -r -9 ../app/src/main/assets/CS16-GameData.zip valve cstrike
+          cd ..
+          ls -lh app/src/main/assets/CS16-GameData.zip
+          sha256sum app/src/main/assets/CS16-GameData.zip
+
+      - name: Build final Russian launcher
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug --stacktrace
+          cp app/build/outputs/apk/debug/app-debug.apk CS16-Final-RU.apk
+
+      - name: Clone CS16Client
+        run: |
+          git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/Velaron/cs16-client.git cs16
+
+      - name: Patch CS16Client for Russian UI and direct GoldSrc connect
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('cs16/android/app/build.gradle')
+          s = p.read_text()
+          s = s.replace('applicationId = "su.xash.cs16client"', 'applicationId = "com.kotyara.cs16client"')
+          p.write_text(s)
+          PY
+          cat > cs16/android/app/src/main/java/su/xash/cs16client/MainActivity.java <<'JAVA'
+          package su.xash.cs16client;
+
+          import android.app.Activity;
+          import android.content.ComponentName;
+          import android.content.Intent;
+          import android.content.pm.PackageManager;
+          import android.net.Uri;
+          import android.os.Bundle;
+
+          public class MainActivity extends Activity {
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+
+                  String engine = "su.xash.engine.test";
+                  try {
+                      getPackageManager().getPackageInfo(engine, 0);
+                  } catch (PackageManager.NameNotFoundException e) {
+                      engine = "su.xash.engine";
+                      try {
+                          getPackageManager().getPackageInfo(engine, 0);
+                      } catch (PackageManager.NameNotFoundException ex) {
+                          startActivity(new Intent(Intent.ACTION_VIEW,
+                                  Uri.parse("https://github.com/FWGS/xash3d-fwgs/releases/tag/continuous")));
+                          finish();
+                          return;
+                      }
+                  }
+
+                  String argv = "-language russian -dll @yapb +cl_advertise_engine_in_name 0 +cl_ticket_generator revemu2013";
+                  String server = getIntent().getStringExtra("server");
+                  if (server != null && server.matches("^[A-Za-z0-9._-]+:[0-9]{1,5}$")) {
+                      argv += " +connect " + server + " gs";
+                  }
+
+                  Intent game = new Intent().setComponent(
+                          new ComponentName(engine, "su.xash.engine.XashActivity"))
+                          .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                          .putExtra("gamedir", "cstrike")
+                          .putExtra("gamelibdir", getApplicationInfo().nativeLibraryDir)
+                          .putExtra("argv", argv)
+                          .putExtra("package", getPackageName());
+                  startActivity(game);
+                  finish();
+              }
+          }
+          JAVA
+
+      - name: Build patched CS16Client
+        working-directory: cs16/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleGitDebug --stacktrace
+          cp app/build/outputs/apk/git/debug/app-git-debug.apk "$GITHUB_WORKSPACE/CS16Client-Final-RU.apk"
+
+      - name: Download latest official Xash3D FWGS
+        run: |
+          curl -L --fail --retry 3 \
+            -o Xash3D-FWGS-latest.apk \
+            https://github.com/FWGS/xash3d-fwgs/releases/download/continuous/xash3d-fwgs-android.apk
+          test "$(stat -c%s Xash3D-FWGS-latest.apk)" -gt 40000000
+
+      - name: Create final package and hashes
+        shell: bash
+        run: |
+          cat > УСТАНОВКА.txt <<'EOF'
+          COUNTER-STRIKE 1.6 ANDROID — ФИНАЛЬНАЯ РУССКАЯ СБОРКА
+
+          Установить по порядку:
+          1. Xash3D-FWGS-latest.apk
+          2. CS16Client-Final-RU.apk
+          3. CS16-Final-RU.apk
+
+          Затем открыть «Counter-Strike 1.6».
+          Нажать «Установить / восстановить файлы игры», разрешить полный доступ к памяти
+          и дождаться окончания распаковки. Google Drive и ZIP на телефоне больше не нужны:
+          valve и cstrike уже находятся внутри CS16-Final-RU.apk.
+
+          В лаунчере:
+          - весь интерфейс на русском;
+          - «Найти серверы» опрашивает Valve master server для cstrike;
+          - можно вводить IP:порт вручную;
+          - подключение запускается как GoldSrc protocol 48;
+          - игровой клиент запускается с -language russian без -dev и -log.
+
+          Важно: Xash3D поддерживает GoldSrc 48, но некоторые серверы с обязательной Steam-аутентификацией
+          могут отклонять Xash3D-клиент. Это ограничение совместимости движка, а не списка серверов.
+          EOF
+          sha256sum CS16-Final-RU.apk CS16Client-Final-RU.apk Xash3D-FWGS-latest.apk > SHA256SUMS.txt
+          zip -9 CS16-Android-Final-RU.zip CS16-Final-RU.apk CS16Client-Final-RU.apk Xash3D-FWGS-latest.apk УСТАНОВКА.txt SHA256SUMS.txt
+          ls -lh CS16-Final-RU.apk CS16Client-Final-RU.apk Xash3D-FWGS-latest.apk CS16-Android-Final-RU.zip
+          cat SHA256SUMS.txt
+
+      - name: Upload final Android pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: CS16-Android-Final-RU
+          path: |
+            CS16-Android-Final-RU.zip
+            CS16-Final-RU.apk
+            CS16Client-Final-RU.apk
+            Xash3D-FWGS-latest.apk
+            УСТАНОВКА.txt
+            SHA256SUMS.txt
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30

@@ -42,7 +42,6 @@ jobs:
                   quiet=False,
                   use_cookies=False,
                   resume=True,
-                  retries=3,
               )
               if not files:
                   raise SystemExit(f"No files downloaded for {name}")

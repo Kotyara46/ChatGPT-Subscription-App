@@ -13,14 +13,14 @@ permissions:
 jobs:
   package:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install gdown
-        run: python3 -m pip install --disable-pip-version-check 'gdown>=5.2,<6'
+      - name: Install latest gdown from GitHub
+        run: python3 -m pip install --disable-pip-version-check 'git+https://github.com/wkentaro/gdown.git@main'
 
       - name: Download valve and cstrike from provided Drive folders
         shell: bash
@@ -77,4 +77,5 @@ jobs:
             CS16-GameData.zip
             CS16-GameData.sha256
           if-no-files-found: error
+          compression-level: 0
           retention-days: 7

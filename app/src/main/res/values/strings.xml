@@ -1,31 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">ChatGPT Plus Контроль</string>
-    <string name="title_main">ChatGPT Plus Контроль</string>
-    <string name="subtitle_main">Подписка, оплата, напоминания и быстрый доступ к ChatGPT — в одном месте.</string>
-    <string name="section_status">Статус подписки</string>
-    <string name="status_unknown">Не проверено</string>
-    <string name="status_active">Plus активен</string>
-    <string name="status_payment_issue">Проблема с оплатой</string>
-    <string name="status_cancelled">Отменена / заканчивается</string>
-    <string name="deadline_none">Крайний срок не указан</string>
-    <string name="last_check_never">Проверка ещё не выполнялась</string>
-    <string name="check_subscription">Показать мою подписку внутри приложения</string>
-    <string name="change_status">Изменить статус</string>
-    <string name="set_deadline">Указать срок</string>
-    <string name="clear_deadline">Очистить срок</string>
-    <string name="section_actions">Быстрые действия</string>
-    <string name="open_chatgpt">Открыть ChatGPT</string>
-    <string name="open_billing">Моя подписка / Billing</string>
-    <string name="buy_plus">Купить / продлить Plus</string>
-    <string name="open_google_play">Подписка ChatGPT в Google Play</string>
-    <string name="section_reminders">Напоминания</string>
-    <string name="reminders_switch">Напоминать о сроке оплаты</string>
-    <string name="reminders_hint">Уведомления приходят за 3 дня, за 1 день и в день срока.</string>
-    <string name="section_tools">Инструменты</string>
-    <string name="copy_diagnostics">Скопировать диагностику</string>
-    <string name="billing_help">Справка по оплате</string>
-    <string name="open_support">Поддержка OpenAI</string>
-    <string name="privacy_note">Страница подписки теперь открывается прямо внутри приложения через официальный сайт ChatGPT. Приложение не просит отдельный пароль и не хранит банковские данные.</string>
-    <string name="api_note">Важно: у OpenAI нет публичного API для стороннего приложения, который надёжно отдаёт статус личной подписки Plus. Поэтому фактический статус показывается на официальной странице Billing внутри приложения; карточку статуса и срок можно использовать для заметки и напоминаний.</string>
+    <string name="app_name">GPT Direct</string>
 </resources>

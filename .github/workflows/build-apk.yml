@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build CS16 Installer APK
 
 on:
   push:
@@ -41,13 +41,13 @@ jobs:
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
 
-      - name: Prepare installable APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk GPT-Direct.apk
+      - name: Prepare APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk CS16-Setup-Helper.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: GPT-Direct-APK
-          path: GPT-Direct.apk
+          name: CS16-Setup-Helper-APK
+          path: CS16-Setup-Helper.apk
           if-no-files-found: error
           retention-days: 30

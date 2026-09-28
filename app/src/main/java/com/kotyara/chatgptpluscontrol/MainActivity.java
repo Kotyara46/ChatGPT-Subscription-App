@@ -5,14 +5,12 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
-import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.provider.Settings;
-import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -22,6 +20,8 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.documentfile.provider.DocumentFile;
+
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.File;
@@ -30,23 +30,21 @@ import java.io.InputStream;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 public class MainActivity extends Activity {
-    private static final int REQ_ZIP = 1201;
-    private static final int REQ_WRITE = 1202;
-    private static final long MAX_EXTRACTED_BYTES = 12L * 1024L * 1024L * 1024L;
+    private static final int REQ_TREE = 1301;
+    private static final int REQ_WRITE = 1302;
+    private static final long MAX_COPIED_BYTES = 12L * 1024L * 1024L * 1024L;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     private TextView status;
     private TextView detail;
     private ProgressBar progress;
-    private Button installButton;
+    private Button importButton;
     private Button permissionButton;
     private Button launchButton;
-    private boolean pendingZipPick = false;
+    private boolean pendingTreePick = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -61,9 +59,9 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         refreshStatus();
-        if (pendingZipPick && hasFileAccess()) {
-            pendingZipPick = false;
-            pickZip();
+        if (pendingTreePick && hasFileAccess()) {
+            pendingTreePick = false;
+            pickGameFolder();
         }
     }
 
@@ -85,18 +83,13 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        TextView title = text("CS 1.6 — установщик файлов", 27, Color.WHITE, true);
-        root.addView(title, lp(0, 6));
-
-        TextView subtitle = text("Сам положит valve и cstrike в правильную папку Xash3D", 15,
-                Color.rgb(169, 178, 192), false);
-        root.addView(subtitle, lp(0, 22));
+        root.addView(text("CS 1.6 — импорт с Google Drive", 27, Color.WHITE, true), lp(0, 6));
+        root.addView(text("Выбери папку, где лежат valve и cstrike — остальное приложение сделает само", 15,
+                Color.rgb(169, 178, 192), false), lp(0, 22));
 
         LinearLayout card = card();
         root.addView(card, lp(0, 16));
-
-        TextView cardTitle = text("Состояние", 16, Color.WHITE, true);
-        card.addView(cardTitle, lp(0, 10));
+        card.addView(text("Состояние", 16, Color.WHITE, true), lp(0, 10));
 
         status = text("Проверяю…", 19, Color.WHITE, true);
         card.addView(status, lp(0, 7));
@@ -115,12 +108,12 @@ public class MainActivity extends Activity {
         permissionButton.setOnClickListener(v -> requestFileAccess(false));
         root.addView(permissionButton, lp(0, 10));
 
-        installButton = button("2. Выбрать ZIP и установить CS 1.6");
-        installButton.setOnClickListener(v -> {
-            if (hasFileAccess()) pickZip();
+        importButton = button("2. Выбрать папку CS 1.6 и установить");
+        importButton.setOnClickListener(v -> {
+            if (hasFileAccess()) pickGameFolder();
             else requestFileAccess(true);
         });
-        root.addView(installButton, lp(0, 10));
+        root.addView(importButton, lp(0, 10));
 
         Button checkButton = secondaryButton("Проверить установленные файлы");
         checkButton.setOnClickListener(v -> refreshStatus());
@@ -132,12 +125,15 @@ public class MainActivity extends Activity {
 
         LinearLayout info = card();
         root.addView(info, lp(0, 0));
-        info.addView(text("Что должен содержать ZIP", 16, Color.WHITE, true), lp(0, 8));
+        info.addView(text("Как выбрать твою папку из Drive", 16, Color.WHITE, true), lp(0, 8));
         TextView help = text(
-                "Архив должен содержать папки valve и cstrike из твоей установленной CS 1.6. " +
-                "Можно архивировать всю папку Half-Life — установщик сам найдёт внутри valve/cstrike.\n\n" +
-                "Куда установит:\nВнутренняя память/xash/valve\nВнутренняя память/xash/cstrike\n\n" +
-                "Карты, модели, звуки и остальные файлы игры в этот APK не встроены — он переносит твою собственную копию.",
+                "1) Нажми «Выбрать папку CS 1.6».\n" +
+                "2) В системном выборе файлов открой Google Drive.\n" +
+                "3) Выбери корневую папку из твоей ссылки — ту, где рядом лежат папки valve и cstrike.\n\n" +
+                "Приложение скопирует только valve и cstrike в:\n" +
+                "Внутренняя память/xash/valve\n" +
+                "Внутренняя память/xash/cstrike\n\n" +
+                "Windows-файлы рядом с ними (hl.exe, dll из корня и т.п.) не нужны и не копируются.",
                 14, Color.rgb(180, 190, 203), false);
         help.setLineSpacing(0, 1.15f);
         info.addView(help, lp(0, 0));
@@ -145,11 +141,11 @@ public class MainActivity extends Activity {
         setContentView(scroll);
     }
 
-    private void requestFileAccess(boolean thenPickZip) {
-        pendingZipPick = thenPickZip;
+    private void requestFileAccess(boolean thenPickTree) {
+        pendingTreePick = thenPickTree;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (Environment.isExternalStorageManager()) {
-                if (thenPickZip) pickZip();
+                if (thenPickTree) pickGameFolder();
                 return;
             }
             try {
@@ -161,7 +157,7 @@ public class MainActivity extends Activity {
             }
         } else {
             if (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
-                if (thenPickZip) pickZip();
+                if (thenPickTree) pickGameFolder();
             } else {
                 requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQ_WRITE);
             }
@@ -174,9 +170,9 @@ public class MainActivity extends Activity {
         if (requestCode == REQ_WRITE) {
             boolean ok = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
             refreshStatus();
-            if (ok && pendingZipPick) {
-                pendingZipPick = false;
-                pickZip();
+            if (ok && pendingTreePick) {
+                pendingTreePick = false;
+                pickGameFolder();
             }
         }
     }
@@ -188,106 +184,66 @@ public class MainActivity extends Activity {
         return checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
     }
 
-    private void pickZip() {
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("application/zip");
-        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
-                "application/zip", "application/x-zip-compressed", "application/octet-stream"
-        });
-        startActivityForResult(intent, REQ_ZIP);
+    private void pickGameFolder() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION |
+                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION |
+                Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+        startActivityForResult(intent, REQ_TREE);
     }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == REQ_ZIP && resultCode == RESULT_OK && data != null && data.getData() != null) {
-            Uri uri = data.getData();
+        if (requestCode == REQ_TREE && resultCode == RESULT_OK && data != null && data.getData() != null) {
+            Uri treeUri = data.getData();
             try {
-                getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                int flags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                getContentResolver().takePersistableUriPermission(treeUri, flags);
             } catch (Exception ignored) {
             }
-            installFromZip(uri);
+            installFromFolder(treeUri);
         }
     }
 
-    private void installFromZip(Uri uri) {
-        setBusy(true, "Распаковываю valve и cstrike…");
+    private void installFromFolder(Uri treeUri) {
+        setBusy(true, "Ищу valve и cstrike…");
         executor.execute(() -> {
-            int files = 0;
-            long bytes = 0;
-            boolean foundValve = false;
-            boolean foundCstrike = false;
             try {
-                File root = getXashRoot();
-                if (!root.exists() && !root.mkdirs()) {
-                    throw new Exception("Не удалось создать " + root.getAbsolutePath());
-                }
-                String rootCanonical = root.getCanonicalPath() + File.separator;
-
-                try (InputStream raw = getContentResolver().openInputStream(uri);
-                     ZipInputStream zip = new ZipInputStream(new BufferedInputStream(raw, 128 * 1024))) {
-                    if (raw == null) throw new Exception("Не удалось открыть ZIP");
-                    ZipEntry entry;
-                    byte[] buffer = new byte[128 * 1024];
-                    while ((entry = zip.getNextEntry()) != null) {
-                        String relative = relevantPath(entry.getName());
-                        if (relative == null || relative.isEmpty()) {
-                            zip.closeEntry();
-                            continue;
-                        }
-                        String low = relative.toLowerCase(Locale.ROOT);
-                        if (low.equals("valve") || low.startsWith("valve/")) foundValve = true;
-                        if (low.equals("cstrike") || low.startsWith("cstrike/")) foundCstrike = true;
-
-                        File out = new File(root, relative);
-                        String outCanonical = out.getCanonicalPath();
-                        if (!outCanonical.equals(root.getCanonicalPath()) && !outCanonical.startsWith(rootCanonical)) {
-                            throw new Exception("Небезопасный путь в ZIP: " + entry.getName());
-                        }
-
-                        if (entry.isDirectory()) {
-                            if (!out.exists() && !out.mkdirs()) throw new Exception("Не удалось создать " + out.getName());
-                        } else {
-                            File parent = out.getParentFile();
-                            if (parent != null && !parent.exists() && !parent.mkdirs()) {
-                                throw new Exception("Не удалось создать папку " + parent.getName());
-                            }
-                            try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(out), 128 * 1024)) {
-                                int read;
-                                while ((read = zip.read(buffer)) != -1) {
-                                    bytes += read;
-                                    if (bytes > MAX_EXTRACTED_BYTES) {
-                                        throw new Exception("Архив слишком большой");
-                                    }
-                                    bos.write(buffer, 0, read);
-                                }
-                            }
-                            files++;
-                            if (files % 75 == 0) {
-                                int shown = files;
-                                runOnUiThread(() -> detail.setText("Установлено файлов: " + shown + "\nПапка: " + getXashRoot().getAbsolutePath()));
-                            }
-                        }
-                        zip.closeEntry();
-                    }
+                DocumentFile selected = DocumentFile.fromTreeUri(this, treeUri);
+                if (selected == null || !selected.isDirectory()) {
+                    throw new Exception("Не удалось открыть выбранную папку");
                 }
 
-                if (!foundValve || !foundCstrike) {
-                    String missing = !foundValve && !foundCstrike ? "valve и cstrike" : (!foundValve ? "valve" : "cstrike");
-                    throw new Exception("В ZIP не найдена папка " + missing + ". Нужен архив из установленной CS 1.6.");
+                DocumentFile valve = findDirectChildDir(selected, "valve");
+                DocumentFile cstrike = findDirectChildDir(selected, "cstrike");
+
+                if (valve == null || cstrike == null) {
+                    throw new Exception("В выбранной папке должны лежать две папки рядом: valve и cstrike");
                 }
 
-                int finalFiles = files;
+                File xashRoot = getXashRoot();
+                if (!xashRoot.exists() && !xashRoot.mkdirs()) {
+                    throw new Exception("Не удалось создать " + xashRoot.getAbsolutePath());
+                }
+
+                CopyStats stats = new CopyStats();
+                copyDirectory(valve, new File(xashRoot, "valve"), xashRoot, stats);
+                copyDirectory(cstrike, new File(xashRoot, "cstrike"), xashRoot, stats);
+
+                int copiedFiles = stats.files;
+                long copiedMb = stats.bytes / (1024L * 1024L);
                 runOnUiThread(() -> {
                     setBusy(false, null);
                     refreshStatus();
-                    Toast.makeText(this, "Готово. Установлено файлов: " + finalFiles, Toast.LENGTH_LONG).show();
+                    Toast.makeText(this,
+                            "Готово: " + copiedFiles + " файлов, примерно " + copiedMb + " МБ",
+                            Toast.LENGTH_LONG).show();
                 });
             } catch (Exception e) {
                 runOnUiThread(() -> {
                     setBusy(false, null);
-                    status.setText("Ошибка установки");
+                    status.setText("Ошибка импорта");
                     status.setTextColor(Color.rgb(255, 105, 105));
                     detail.setText(e.getMessage() == null ? e.toString() : e.getMessage());
                 });
@@ -295,23 +251,72 @@ public class MainActivity extends Activity {
         });
     }
 
-    private String relevantPath(String input) {
-        if (input == null) return null;
-        String n = input.replace('\\', '/');
-        while (n.startsWith("/")) n = n.substring(1);
-        if (n.contains("../") || n.equals("..")) return null;
-        String lower = n.toLowerCase(Locale.ROOT);
-
-        String[] roots = {"cstrike", "valve"};
-        for (String root : roots) {
-            if (lower.equals(root)) return root;
-            if (lower.startsWith(root + "/")) return n;
-            String marker = "/" + root + "/";
-            int idx = lower.indexOf(marker);
-            if (idx >= 0) return n.substring(idx + 1);
-            if (lower.endsWith("/" + root)) return root;
+    private DocumentFile findDirectChildDir(DocumentFile parent, String wanted) {
+        for (DocumentFile child : parent.listFiles()) {
+            String name = child.getName();
+            if (child.isDirectory() && name != null && wanted.equalsIgnoreCase(name.trim())) {
+                return child;
+            }
         }
         return null;
+    }
+
+    private void copyDirectory(DocumentFile source, File destination, File xashRoot, CopyStats stats) throws Exception {
+        if (!destination.exists() && !destination.mkdirs()) {
+            throw new Exception("Не удалось создать папку " + destination.getAbsolutePath());
+        }
+
+        String allowedRoot = xashRoot.getCanonicalPath() + File.separator;
+        for (DocumentFile child : source.listFiles()) {
+            String name = child.getName();
+            if (name == null || name.isEmpty()) continue;
+            if (name.contains("/") || name.contains("\\") || name.equals(".") || name.equals("..")) {
+                throw new Exception("Некорректное имя файла: " + name);
+            }
+
+            File out = new File(destination, name);
+            String canonical = out.getCanonicalPath();
+            if (!canonical.startsWith(allowedRoot)) {
+                throw new Exception("Небезопасный путь: " + name);
+            }
+
+            if (child.isDirectory()) {
+                copyDirectory(child, out, xashRoot, stats);
+            } else if (child.isFile()) {
+                copyOneFile(child, out, stats);
+            }
+        }
+    }
+
+    private void copyOneFile(DocumentFile source, File out, CopyStats stats) throws Exception {
+        File parent = out.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw new Exception("Не удалось создать " + parent.getAbsolutePath());
+        }
+
+        try (InputStream raw = getContentResolver().openInputStream(source.getUri())) {
+            if (raw == null) throw new Exception("Не удалось открыть " + source.getName());
+            try (BufferedInputStream in = new BufferedInputStream(raw, 128 * 1024);
+                 BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(out, false), 128 * 1024)) {
+                byte[] buffer = new byte[128 * 1024];
+                int read;
+                while ((read = in.read(buffer)) != -1) {
+                    stats.bytes += read;
+                    if (stats.bytes > MAX_COPIED_BYTES) throw new Exception("Слишком большой объём данных");
+                    bos.write(buffer, 0, read);
+                }
+            }
+        }
+
+        stats.files++;
+        if (stats.files % 40 == 0) {
+            int count = stats.files;
+            long mb = stats.bytes / (1024L * 1024L);
+            runOnUiThread(() -> detail.setText(
+                    "Копирую файлы из Google Drive…\n" +
+                    "Скопировано: " + count + " файлов • " + mb + " МБ\n" +
+                    "Не закрывай приложение до завершения."));
+        }
     }
 
     private void refreshStatus() {
@@ -375,12 +380,12 @@ public class MainActivity extends Activity {
                 return;
             }
         }
-        Toast.makeText(this, "CS16Client не найден. Установи APK клиента.", Toast.LENGTH_LONG).show();
+        Toast.makeText(this, "CS16Client не найден. Сначала установи APK клиента.", Toast.LENGTH_LONG).show();
     }
 
     private void setBusy(boolean busy, String message) {
         progress.setVisibility(busy ? View.VISIBLE : View.GONE);
-        installButton.setEnabled(!busy);
+        importButton.setEnabled(!busy);
         permissionButton.setEnabled(!busy);
         launchButton.setEnabled(!busy && isAnyPackageInstalled("su.xash.cs16client.test", "su.xash.cs16client"));
         if (busy && message != null) {
@@ -389,56 +394,54 @@ public class MainActivity extends Activity {
         }
     }
 
+    private TextView text(String value, int sizeSp, int color, boolean bold) {
+        TextView tv = new TextView(this);
+        tv.setText(value);
+        tv.setTextSize(sizeSp);
+        tv.setTextColor(color);
+        if (bold) tv.setTypeface(tv.getTypeface(), android.graphics.Typeface.BOLD);
+        return tv;
+    }
+
+    private Button button(String label) {
+        Button b = new Button(this);
+        b.setText(label);
+        b.setTextSize(15);
+        b.setTextColor(Color.WHITE);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.rgb(47, 113, 230));
+        bg.setCornerRadius(dp(12));
+        b.setBackground(bg);
+        b.setAllCaps(false);
+        b.setPadding(dp(12), dp(12), dp(12), dp(12));
+        return b;
+    }
+
+    private Button secondaryButton(String label) {
+        Button b = button(label);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.rgb(34, 40, 50));
+        bg.setStroke(dp(1), Color.rgb(70, 78, 92));
+        bg.setCornerRadius(dp(12));
+        b.setBackground(bg);
+        return b;
+    }
+
     private LinearLayout card() {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(18), dp(16), dp(18), dp(16));
+        box.setPadding(dp(16), dp(16), dp(16), dp(16));
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Color.rgb(25, 30, 39));
-        bg.setCornerRadius(dp(18));
-        bg.setStroke(dp(1), Color.rgb(48, 57, 70));
+        bg.setColor(Color.rgb(24, 29, 37));
+        bg.setCornerRadius(dp(14));
         box.setBackground(bg);
         return box;
     }
 
-    private TextView text(String value, int sp, int color, boolean bold) {
-        TextView v = new TextView(this);
-        v.setText(value);
-        v.setTextSize(sp);
-        v.setTextColor(color);
-        if (bold) v.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        return v;
-    }
-
-    private Button button(String value) {
-        Button b = new Button(this);
-        b.setText(value);
-        b.setTextColor(Color.WHITE);
-        b.setTextSize(15);
-        b.setAllCaps(false);
-        b.setGravity(Gravity.CENTER);
-        b.setPadding(dp(12), 0, dp(12), 0);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Color.rgb(39, 116, 240));
-        bg.setCornerRadius(dp(14));
-        b.setBackground(bg);
-        b.setMinHeight(dp(54));
-        return b;
-    }
-
-    private Button secondaryButton(String value) {
-        Button b = button(value);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Color.rgb(30, 36, 46));
-        bg.setCornerRadius(dp(14));
-        bg.setStroke(dp(1), Color.rgb(63, 74, 91));
-        b.setBackground(bg);
-        return b;
-    }
-
     private LinearLayout.LayoutParams lp(int top, int bottom) {
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
         p.topMargin = dp(top);
         p.bottomMargin = dp(bottom);
         return p;
@@ -446,5 +449,10 @@ public class MainActivity extends Activity {
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private static final class CopyStats {
+        int files = 0;
+        long bytes = 0;
     }
 }

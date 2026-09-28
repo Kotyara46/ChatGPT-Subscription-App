@@ -1,0 +1,54 @@
+name: Package CS16 Android Port
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/fetch-cs16-mobile-pack.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download verified CS16Client Android APK
+        run: |
+          curl -L --fail --retry 3 -o CS16Client-Android.apk \
+            https://github.com/Velaron/cs16-client/releases/download/continuous/CS16Client-Android.apk
+          echo "8fe7398060e631c9df1d1b077a26e6cbf36902e6087a8d74d72fcc6d1b5c9ed6  CS16Client-Android.apk" | sha256sum -c -
+
+      - name: Download verified Xash3D FWGS Android engine
+        run: |
+          curl -L --fail --retry 3 -o Xash3D-FWGS-Engine.apk \
+            https://github.com/FWGS/xash3d-fwgs/releases/download/continuous-drop-truncated-downloads/xash3d-fwgs-android.apk
+          echo "221f6ce39770824460b8ad91c65fb5e94c5cce1c1981273eeba5f29f48f8a0d4  Xash3D-FWGS-Engine.apk" | sha256sum -c -
+
+      - name: Write Russian install guide
+        run: |
+          cat > INSTALL-RU.txt <<'EOF'
+          РЕАЛЬНАЯ COUNTER-STRIKE 1.6 НА ANDROID
+
+          1) Установите Xash3D-FWGS-Engine.apk.
+          2) Установите CS16Client-Android.apk.
+          3) Из своей установленной лицензионной Counter-Strike 1.6 скопируйте папки valve и cstrike на телефон.
+          4) Запустите CS16Client и укажите папку с этими файлами.
+
+          После импорта используются ваши настоящие карты, модели, оружие, звуки и конфиги CS 1.6.
+          Движок поддерживает сетевую игру и сервер-браузер; клиент адаптирован для Android и сенсорного управления.
+
+          Оригинальные файлы Valve в этот пакет не включены и автоматически не скачиваются.
+          EOF
+
+      - name: Upload pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: CS16-Android-Real-Port
+          path: |
+            CS16Client-Android.apk
+            Xash3D-FWGS-Engine.apk
+            INSTALL-RU.txt
+          retention-days: 30
+          if-no-files-found: error

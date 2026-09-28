@@ -100,13 +100,15 @@ public class MainActivity extends AppCompatActivity {
     private void checkSubscription() {
         prefs.edit().putLong(KEY_LAST_CHECK, System.currentTimeMillis()).apply();
         refreshUi();
-        Toast.makeText(this, "В ChatGPT откройте Настройки → Billing и после проверки отметьте статус здесь.", Toast.LENGTH_LONG).show();
-        openUrl("https://chatgpt.com/");
+        openSubscriptionScreen();
     }
 
     private void openBilling() {
-        Toast.makeText(this, "Откройте Настройки → Billing. Там доступны способ оплаты, счета и управление Plus.", Toast.LENGTH_LONG).show();
-        openUrl("https://chatgpt.com/");
+        openSubscriptionScreen();
+    }
+
+    private void openSubscriptionScreen() {
+        startActivity(new Intent(this, SubscriptionActivity.class));
     }
 
     private void openChatGPT() {
@@ -114,7 +116,7 @@ public class MainActivity extends AppCompatActivity {
         if (launch != null) {
             startActivity(launch);
         } else {
-            openUrl("https://chatgpt.com/");
+            openSubscriptionScreen();
         }
     }
 

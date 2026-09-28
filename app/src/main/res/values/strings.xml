@@ -10,13 +10,13 @@
     <string name="status_cancelled">Отменена / заканчивается</string>
     <string name="deadline_none">Крайний срок не указан</string>
     <string name="last_check_never">Проверка ещё не выполнялась</string>
-    <string name="check_subscription">Проверить подписку</string>
+    <string name="check_subscription">Показать мою подписку внутри приложения</string>
     <string name="change_status">Изменить статус</string>
     <string name="set_deadline">Указать срок</string>
     <string name="clear_deadline">Очистить срок</string>
     <string name="section_actions">Быстрые действия</string>
     <string name="open_chatgpt">Открыть ChatGPT</string>
-    <string name="open_billing">Оплата и Billing</string>
+    <string name="open_billing">Моя подписка / Billing</string>
     <string name="buy_plus">Купить / продлить Plus</string>
     <string name="open_google_play">Подписка ChatGPT в Google Play</string>
     <string name="section_reminders">Напоминания</string>
@@ -26,6 +26,6 @@
     <string name="copy_diagnostics">Скопировать диагностику</string>
     <string name="billing_help">Справка по оплате</string>
     <string name="open_support">Поддержка OpenAI</string>
-    <string name="privacy_note">Приложение не просит пароль ChatGPT и не хранит банковские данные. Оплата и управление подпиской открываются только на официальных страницах OpenAI или Google Play.</string>
-    <string name="api_note">Важно: OpenAI не предоставляет публичный API, который стороннее приложение может использовать для автоматического чтения срока ChatGPT Plus. Поэтому приложение открывает официальный Billing и хранит только тот статус и срок, который вы подтверждаете сами.</string>
+    <string name="privacy_note">Страница подписки теперь открывается прямо внутри приложения через официальный сайт ChatGPT. Приложение не просит отдельный пароль и не хранит банковские данные.</string>
+    <string name="api_note">Важно: у OpenAI нет публичного API для стороннего приложения, который надёжно отдаёт статус личной подписки Plus. Поэтому фактический статус показывается на официальной странице Billing внутри приложения; карточку статуса и срок можно использовать для заметки и напоминаний.</string>
 </resources>

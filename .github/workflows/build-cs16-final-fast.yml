@@ -45,7 +45,7 @@ jobs:
           }
           all_files = []
           for name, folder_id in sources.items():
-              out = os.path.join('game-data', name) + os.sep
+              out = os.path.join('game-data', name)
               os.makedirs(out, exist_ok=True)
               print('Listing', name, flush=True)
               files = gdown.download_folder(
@@ -54,6 +54,7 @@ jobs:
                   quiet=True,
                   use_cookies=False,
                   skip_download=True,
+                  timeout=30,
               )
               if not files:
                   raise SystemExit(f'Не удалось получить список {name}')
@@ -69,6 +70,7 @@ jobs:
                   use_cookies=False,
                   resume=True,
                   retries=5,
+                  timeout=30,
               )
               if not result or not os.path.isfile(item.local_path):
                   raise RuntimeError(item.local_path)

@@ -1,0 +1,74 @@
+name: Build CS16 Mobile Pack
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/build-cs16-mobile.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout CS16Client source
+        run: |
+          git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/Velaron/cs16-client.git cs16
+
+      - name: Install build dependencies
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y ccache
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Build CS16Client APK
+        working-directory: cs16/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleGitDebug --stacktrace
+          cp app/build/outputs/apk/git/debug/app-git-debug.apk "$GITHUB_WORKSPACE/CS16Client-Android.apk"
+
+      - name: Fetch compatible Xash3D FWGS engine APK
+        run: |
+          curl -L --fail --retry 3 \
+            -o Xash3D-FWGS-Engine.apk \
+            https://github.com/FWGS/xash3d-fwgs/releases/download/continuous-drop-truncated-downloads/xash3d-fwgs-android.apk
+          echo "221f6ce39770824460b8ad91c65fb5e94c5cce1c1981273eeba5f29f48f8a0d4  Xash3D-FWGS-Engine.apk" | sha256sum -c -
+
+      - name: Add installation guide
+        run: |
+          cat > INSTALL-RU.txt <<'EOF'
+          CS 1.6 НА ANDROID — УСТАНОВКА
+
+          1. Установите Xash3D-FWGS-Engine.apk.
+          2. Установите CS16Client-Android.apk.
+          3. Скопируйте ИЗ СВОЕЙ ЛИЦЕНЗИОННОЙ CS 1.6 (Steam) папки valve и cstrike в папку игры на телефоне, которую предложит движок/клиент.
+          4. Запустите CS16Client и выберите папку с файлами игры.
+
+          В комплект намеренно НЕ входят оригинальные карты, модели, звуки и другие файлы Valve.
+          Они берутся из вашей собственной установленной Counter-Strike 1.6.
+
+          После импорта доступны реальный движок GoldSrc-совместимого порта, онлайн-игра,
+          браузер серверов, карты/модели/оружие из ваших файлов CS 1.6, сенсорное управление и настройки.
+          EOF
+
+      - name: Upload Android pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: CS16-Mobile-Pack
+          path: |
+            CS16Client-Android.apk
+            Xash3D-FWGS-Engine.apk
+            INSTALL-RU.txt
+          if-no-files-found: error
+          retention-days: 30

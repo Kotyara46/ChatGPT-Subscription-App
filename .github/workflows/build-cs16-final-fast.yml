@@ -15,6 +15,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
       - name: Checkout launcher
@@ -26,11 +29,20 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install tools
+      - name: Install Android SDK and tools
+        shell: bash
         run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "platforms;android-36" "build-tools;35.0.0" "ndk;28.2.13676358"
           sudo apt-get update
           sudo apt-get install -y ccache zip
           python3 -m pip install --disable-pip-version-check 'git+https://github.com/wkentaro/gdown.git@main'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
 
       - name: Build Google Drive game manifest
         shell: bash
@@ -115,12 +127,10 @@ jobs:
             echo 'Google Drive returned HTML instead of liblist.gam' >&2
             exit 1
           fi
-          head -c 200 /tmp/liblist.gam | strings
 
       - name: Build final Russian launcher
         run: |
-          chmod +x gradlew
-          ./gradlew :app:assembleDebug --stacktrace
+          gradle :app:assembleDebug --stacktrace
           cp app/build/outputs/apk/debug/app-debug.apk CS16-Final-RU.apk
 
       - name: Clone CS16Client
@@ -227,7 +237,7 @@ jobs:
           Что изменено:
           - интерфейс лаунчера полностью на русском;
           - меню оформлено в стиле классической PC CS 1.6;
-          - добавлены русские GameUI/VGUI/Valve/ServerBrowser resource-файлы из твоего Drive;
+          - русские GameUI/VGUI/Valve/ServerBrowser resource-файлы;
           - русский язык принудительно передаётся игровому клиенту;
           - удалены отладочные параметры -dev 2 и -log;
           - браузер серверов запрашивает Valve Master Server с gamedir=cstrike;

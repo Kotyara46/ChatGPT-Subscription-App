@@ -63,9 +63,6 @@ jobs:
                   rows.append((item.id, f'{root}/{rel}'))
               print(root, len(items), 'files', flush=True)
 
-          # Russian localization files supplied in the same Drive collection.
-          # They live outside valve/cstrike in the PC install, so map them to the
-          # game search paths used by Xash3D on Android.
           rows.extend([
               ('1VLlW_lUw6fHHVQ29bXsNgt6L2vo_hCH2', 'cstrike/resource/gameui_russian.txt'),
               ('1kJcgBuMKbGBODobEZjREWx2vt8WjyRDj', 'cstrike/resource/serverbrowser_russian.txt'),
@@ -73,7 +70,6 @@ jobs:
               ('1ws8bwyelvwB7y2yM3N70vMDmWFKMSuEr', 'valve/resource/valve_russian.txt'),
           ])
 
-          # Deduplicate by destination path, keeping the last (overlay) entry.
           by_path = {path: fid for fid, path in rows}
           rows = [(fid, path) for path, fid in by_path.items()]
           rows.sort(key=lambda x: x[1].lower())
@@ -93,10 +89,11 @@ jobs:
           if len(rows) < 4000:
               raise SystemExit(f'Manifest unexpectedly small: {len(rows)} files')
 
+          tab = chr(9)
           with open('app/src/main/assets/drive-manifest.tsv', 'w', encoding='utf-8', newline='\n') as f:
-              f.write('# id\\tpath\n')
+              f.write('# id' + tab + 'path\n')
               for fid, path in rows:
-                  f.write(f'{fid}\\t{path}\n')
+                  f.write(fid + tab + path + '\n')
           print('Manifest files:', len(rows))
           PY
           wc -l app/src/main/assets/drive-manifest.tsv

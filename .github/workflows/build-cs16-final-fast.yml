@@ -129,7 +129,18 @@ jobs:
           fi
 
       - name: Build final Russian launcher
+        shell: bash
         run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/kotyara/chatgptpluscontrol/MainActivity.java')
+          s = p.read_text(encoding='utf-8')
+          old = '''            List<String> items = new ArrayList<>(addresses);\n            int total = Math.min(INFO_MAX, items.size());\n            runOnUiThread(() -> progress.setText("Получено адресов: " + addresses.size() + ". Проверяю ответы…"));'''
+          new = '''            List<String> items = new ArrayList<>(addresses);\n            int total = Math.min(INFO_MAX, items.size());\n            final int addressCount = addresses.size();\n            runOnUiThread(() -> progress.setText("Получено адресов: " + addressCount + ". Проверяю ответы…"));'''
+          if old not in s:
+              raise SystemExit('Expected loadServers block was not found')
+          p.write_text(s.replace(old, new), encoding='utf-8')
+          PY
           gradle :app:assembleDebug --stacktrace
           cp app/build/outputs/apk/debug/app-debug.apk CS16-Final-RU.apk
 

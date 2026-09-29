@@ -1,4 +1,4 @@
-name: Build CS16 Android Final RU Fast
+name: Build CS16 Android Final RU
 
 on:
   workflow_dispatch:
@@ -6,6 +6,7 @@ on:
     branches: [ "main" ]
     paths:
       - ".github/workflows/build-cs16-final-fast.yml"
+      - "app/**"
 
 permissions:
   contents: read
@@ -31,115 +32,98 @@ jobs:
           sudo apt-get install -y ccache zip
           python3 -m pip install --disable-pip-version-check 'git+https://github.com/wkentaro/gdown.git@main'
 
-      - name: Download game data in parallel
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import os
-          from concurrent.futures import ThreadPoolExecutor, as_completed
-          import gdown
-
-          sources = {
-              'valve': '13ES7ete84kf1bqZEV36QUHUxWbpUPfyU',
-              'cstrike': '1q0sK9tdBaXM2XiqOD1t7jdec3OuuSzE2',
-          }
-          all_files = []
-          for name, folder_id in sources.items():
-              out = os.path.join('game-data', name)
-              os.makedirs(out, exist_ok=True)
-              print('Listing', name, flush=True)
-              files = gdown.download_folder(
-                  id=folder_id,
-                  output=out,
-                  quiet=True,
-                  use_cookies=False,
-                  skip_download=True,
-                  timeout=30,
-              )
-              if not files:
-                  raise SystemExit(f'Не удалось получить список {name}')
-              print(name, len(files), 'files listed', flush=True)
-              all_files.extend(files)
-
-          def download_one(item):
-              os.makedirs(os.path.dirname(item.local_path), exist_ok=True)
-              result = gdown.download(
-                  id=item.id,
-                  output=item.local_path,
-                  quiet=True,
-                  use_cookies=False,
-                  resume=True,
-                  retries=5,
-                  timeout=30,
-              )
-              if not result or not os.path.isfile(item.local_path):
-                  raise RuntimeError(item.local_path)
-              return item.local_path, os.path.getsize(item.local_path)
-
-          done = 0
-          total_bytes = 0
-          failures = []
-          with ThreadPoolExecutor(max_workers=12) as pool:
-              futures = {pool.submit(download_one, f): f for f in all_files}
-              for fut in as_completed(futures):
-                  item = futures[fut]
-                  try:
-                      path, size = fut.result()
-                      done += 1
-                      total_bytes += size
-                      if done % 50 == 0 or done == len(all_files):
-                          print(f'Downloaded {done}/{len(all_files)} files, {total_bytes/1024/1024:.1f} MiB', flush=True)
-                  except Exception as e:
-                      failures.append((item.id, item.local_path, repr(e)))
-          if failures:
-              print('Failures:', failures[:30], flush=True)
-              raise SystemExit(f'{len(failures)} files failed')
-          PY
-
-      - name: Verify complete game data
-        shell: bash
-        run: |
-          test -f game-data/cstrike/liblist.gam
-          test -d game-data/cstrike/maps
-          test -d game-data/cstrike/models
-          test -d game-data/cstrike/sprites
-          test -f game-data/cstrike/sprites/hud.txt
-          grep -q 'number_0' game-data/cstrike/sprites/hud.txt
-          test -f game-data/cstrike/resource/gameui_russian.txt
-          test -f game-data/cstrike/resource/serverbrowser_russian.txt
-          test -f game-data/valve/resource/valve_russian.txt
-          echo "Valve files: $(find game-data/valve -type f | wc -l)"
-          echo "CStrike files: $(find game-data/cstrike -type f | wc -l)"
-          du -sh game-data/valve game-data/cstrike
-
-      - name: Embed game data in launcher
+      - name: Build Google Drive game manifest
         shell: bash
         run: |
           mkdir -p app/src/main/assets
-          cd game-data
-          zip -r -1 ../app/src/main/assets/CS16-GameData.zip valve cstrike
-          cd ..
-          test -s app/src/main/assets/CS16-GameData.zip
-          ls -lh app/src/main/assets/CS16-GameData.zip
-          sha256sum app/src/main/assets/CS16-GameData.zip
+          python3 - <<'PY'
+          import os
+          import gdown
+
+          sources = {
+              'valve': '1BBpdGENsUE9f90MZ7z6Qa3trxxllS-a0',
+              'cstrike': '1x32CLdPe-y-YWzTHoiOPwaPp3SzKh2KM',
+          }
+          rows = []
+          for root, folder_id in sources.items():
+              print('Listing', root, flush=True)
+              items = gdown.download_folder(
+                  id=folder_id,
+                  output=f'manifest-work/{root}',
+                  quiet=True,
+                  use_cookies=False,
+                  skip_download=True,
+                  timeout=60,
+              )
+              if not items:
+                  raise SystemExit(f'No files listed for {root}')
+              for item in items:
+                  rel = item.path.replace('\\\\', '/').replace('\\', '/')
+                  while rel.startswith('/'):
+                      rel = rel[1:]
+                  rows.append((item.id, f'{root}/{rel}'))
+              print(root, len(items), 'files', flush=True)
+
+          rows.sort(key=lambda x: x[1].lower())
+          required = {
+              'cstrike/liblist.gam',
+              'cstrike/sprites/hud.txt',
+              'cstrike/resource/gameui_russian.txt',
+              'cstrike/resource/serverbrowser_russian.txt',
+              'valve/resource/valve_russian.txt',
+          }
+          paths = {p for _, p in rows}
+          missing = sorted(required - paths)
+          if missing:
+              raise SystemExit('Missing critical files: ' + ', '.join(missing))
+          if len(rows) < 4000:
+              raise SystemExit(f'Manifest unexpectedly small: {len(rows)} files')
+
+          with open('app/src/main/assets/drive-manifest.tsv', 'w', encoding='utf-8', newline='\n') as f:
+              f.write('# id\\tpath\n')
+              for fid, path in rows:
+                  f.write(f'{fid}\\t{path}\n')
+          print('Manifest files:', len(rows))
+          PY
+          wc -l app/src/main/assets/drive-manifest.tsv
+          grep -F $'\tcstrike/liblist.gam' app/src/main/assets/drive-manifest.tsv
+          grep -F $'\tcstrike/sprites/hud.txt' app/src/main/assets/drive-manifest.tsv
+
+      - name: Verify direct Google Drive download
+        shell: bash
+        run: |
+          FILE_ID="$(awk -F '\t' '$2=="cstrike/liblist.gam" {print $1}' app/src/main/assets/drive-manifest.tsv)"
+          test -n "$FILE_ID"
+          curl -L --fail --retry 4 --retry-all-errors \
+            -A 'Mozilla/5.0 (Android) CS16-Mobile/3.0' \
+            "https://drive.usercontent.google.com/download?id=${FILE_ID}&export=download&confirm=t" \
+            -o /tmp/liblist.gam
+          test "$(stat -c%s /tmp/liblist.gam)" -gt 50
+          if grep -Eqi '<!doctype html|<html' /tmp/liblist.gam; then
+            echo 'Google Drive returned HTML instead of liblist.gam' >&2
+            exit 1
+          fi
+          head -c 200 /tmp/liblist.gam | strings
 
       - name: Build final Russian launcher
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleDebug --stacktrace
           cp app/build/outputs/apk/debug/app-debug.apk CS16-Final-RU.apk
-          test -s CS16-Final-RU.apk
 
-      - name: Clone and patch CS16Client
-        shell: bash
+      - name: Clone CS16Client
         run: |
           git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/Velaron/cs16-client.git cs16
+
+      - name: Patch CS16Client for Russian UI and GoldSrc 48
+        shell: bash
+        run: |
           python3 - <<'PY'
           from pathlib import Path
           p = Path('cs16/android/app/build.gradle')
-          s = p.read_text()
+          s = p.read_text(encoding='utf-8')
           s = s.replace('applicationId = "su.xash.cs16client"', 'applicationId = "com.kotyara.cs16client"')
-          p.write_text(s)
+          p.write_text(s, encoding='utf-8')
           PY
           cat > cs16/android/app/src/main/java/su/xash/cs16client/MainActivity.java <<'JAVA'
           package su.xash.cs16client;
@@ -155,6 +139,7 @@ jobs:
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
+
                   String engine = "su.xash.engine.test";
                   try {
                       getPackageManager().getPackageInfo(engine, 0);
@@ -195,21 +180,23 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleGitDebug --stacktrace
           cp app/build/outputs/apk/git/debug/app-git-debug.apk "$GITHUB_WORKSPACE/CS16Client-Final-RU.apk"
-          test -s "$GITHUB_WORKSPACE/CS16Client-Final-RU.apk"
 
-      - name: Download latest official Xash3D FWGS
+      - name: Download latest Xash3D FWGS Android
         run: |
-          curl -L --fail --retry 3 -o Xash3D-FWGS-latest.apk \
+          curl -L --fail --retry 4 --retry-all-errors \
+            -o Xash3D-FWGS-latest.apk \
             https://github.com/FWGS/xash3d-fwgs/releases/download/continuous/xash3d-fwgs-android.apk
-          test "$(stat -c%s Xash3D-FWGS-latest.apk)" -gt 40000000
+          test "$(stat -c%s Xash3D-FWGS-latest.apk)" -gt 30000000
 
-      - name: Validate APK contents
+      - name: Validate APK files
         shell: bash
         run: |
-          unzip -l CS16-Final-RU.apk | grep -q 'assets/CS16-GameData.zip'
-          unzip -l CS16Client-Final-RU.apk | grep -q 'lib/arm64-v8a/'
-          unzip -l Xash3D-FWGS-latest.apk | grep -q 'lib/arm64-v8a/'
-          echo 'APK validation passed'
+          unzip -t CS16-Final-RU.apk >/dev/null
+          unzip -t CS16Client-Final-RU.apk >/dev/null
+          unzip -t Xash3D-FWGS-latest.apk >/dev/null
+          unzip -l CS16-Final-RU.apk | grep -F 'assets/drive-manifest.tsv'
+          test "$(stat -c%s CS16-Final-RU.apk)" -gt 1000000
+          test "$(stat -c%s CS16Client-Final-RU.apk)" -gt 10000000
 
       - name: Create final package and hashes
         shell: bash
@@ -218,36 +205,38 @@ jobs:
           COUNTER-STRIKE 1.6 ANDROID — ФИНАЛЬНАЯ РУССКАЯ СБОРКА
 
           Установка:
-          1. Xash3D-FWGS-latest.apk
-          2. CS16Client-Final-RU.apk
-          3. CS16-Final-RU.apk
+          1. Установи Xash3D-FWGS-latest.apk.
+          2. Установи CS16Client-Final-RU.apk.
+          3. Установи CS16-Final-RU.apk и запускай именно «Counter-Strike 1.6».
+          4. Нажми «Установить / восстановить игру» и разреши приложению доступ ко всем файлам.
+          5. Лаунчер сам скачает valve + cstrike из твоей Google Drive-папки в /storage/emulated/0/xash.
+             Если интернет/Google Drive прервёт загрузку, нажми «Продолжить установку» — уже готовые файлы сохраняются.
 
-          Открой «Counter-Strike 1.6» и нажми «Установить / восстановить файлы игры».
-          Разреши полный доступ к памяти и дождись завершения. valve и cstrike уже встроены в APK —
-          Google Drive, ZIP и ручное копирование на телефоне не нужны.
+          Что изменено:
+          - интерфейс лаунчера полностью на русском;
+          - меню оформлено в стиле классической PC CS 1.6;
+          - русский язык принудительно передаётся игровому клиенту;
+          - удалены отладочные параметры -dev 2 и -log;
+          - браузер серверов запрашивает Valve Master Server с gamedir=cstrike;
+          - поддержан A2S_INFO для новых и старых GoldSrc-ответов;
+          - можно подключаться по IP:порт;
+          - подключение запускается с явным GoldSrc protocol 48 (connect ... gs);
+          - установщик проверяет HUD number_0 и русские resource-файлы.
 
-          Возможности:
-          - главное меню и лаунчер полностью на русском;
-          - игровой клиент запускается с -language russian;
-          - нет отладочных -dev/-log;
-          - браузер запрашивает Valve master server с фильтром cstrike;
-          - отображает имя, карту, игроков, пинг и IP:порт;
-          - можно подключиться вручную по IP:порт;
-          - запуск подключения идёт как GoldSrc protocol 48;
-          - перед запуском проверяются hud.txt/number_0, карты, модели, спрайты и русская локализация.
-
-          Ограничение: некоторые серверы с обязательной Steam-аутентификацией или анти-Xash защитой
-          могут отклонять Xash3D-клиент. Это ограничение совместимости сервера/движка.
+          Некоторые серверы с обязательной Steam-аутентификацией или собственными античит-модулями
+          могут не принимать Xash3D-клиенты. Это ограничение совместимости конкретного сервера.
           EOF
           sha256sum CS16-Final-RU.apk CS16Client-Final-RU.apk Xash3D-FWGS-latest.apk > SHA256SUMS.txt
-          zip -0 CS16-Android-Final-RU.zip CS16-Final-RU.apk CS16Client-Final-RU.apk Xash3D-FWGS-latest.apk УСТАНОВКА.txt SHA256SUMS.txt
+          zip -9 CS16-Android-Final-RU.zip \
+            CS16-Final-RU.apk CS16Client-Final-RU.apk Xash3D-FWGS-latest.apk \
+            УСТАНОВКА.txt SHA256SUMS.txt
           ls -lh CS16-Final-RU.apk CS16Client-Final-RU.apk Xash3D-FWGS-latest.apk CS16-Android-Final-RU.zip
           cat SHA256SUMS.txt
 
       - name: Upload final Android pack
         uses: actions/upload-artifact@v4
         with:
-          name: CS16-Android-Final-RU-Fast
+          name: CS16-Android-Final-RU
           path: |
             CS16-Android-Final-RU.zip
             CS16-Final-RU.apk

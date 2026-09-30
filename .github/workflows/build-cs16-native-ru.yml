@@ -76,11 +76,26 @@ jobs:
                   rows.append((item.id, f'{root}/{rel}'))
               print(root, len(items), 'files', flush=True)
 
+          # These resources live outside the shared cstrike folder on Drive,
+          # but mainui requires them inside cstrike/resource at runtime.
           rows.extend([
               ('1VLlW_lUw6fHHVQ29bXsNgt6L2vo_hCH2', 'cstrike/resource/gameui_russian.txt'),
               ('1kJcgBuMKbGBODobEZjREWx2vt8WjyRDj', 'cstrike/resource/serverbrowser_russian.txt'),
               ('1QyCKJ7l8lxCSZXjT7VNSIP6Nh9ftB2KM', 'cstrike/resource/vgui_russian.txt'),
               ('1ws8bwyelvwB7y2yM3N70vMDmWFKMSuEr', 'valve/resource/valve_russian.txt'),
+              ('1XOeUW_oH1qX5vn_41t-CIGIB5-VK8yr7', 'cstrike/resource/BackgroundLayout.txt'),
+              ('103_imRj1mBmQVKli2NPItICVl_GwWt0D', 'cstrike/resource/background/800_1_a_loading.tga'),
+              ('1zE96s4UzSPbXs6O1uSCAmmuESTrlKgIA', 'cstrike/resource/background/800_1_b_loading.tga'),
+              ('1yGdXJUVtNLxZnBczdJfHqbWSEkUwe2o6', 'cstrike/resource/background/800_1_c_loading.tga'),
+              ('1DpmKUvdVkmAHr9PenELkOEwOkwy5NgGa', 'cstrike/resource/background/800_1_d_loading.tga'),
+              ('1nE_msXRrTCVnbkstBdbLnjGfd_1_qm3a', 'cstrike/resource/background/800_2_a_loading.tga'),
+              ('1vO89NHUM5pjPUgfEkm-aYFbuyrRQns7Q', 'cstrike/resource/background/800_2_b_loading.tga'),
+              ('1gIXdNAI3BjQuGSy1C9J6wHQkdpVBfymR', 'cstrike/resource/background/800_2_c_loading.tga'),
+              ('1nQLUAA5xv7MZJAkkIzz8_bNGjF3wiMtk', 'cstrike/resource/background/800_2_d_loading.tga'),
+              ('1PMieqDLQBSATIiY98nHzWy_QMqn6BepS', 'cstrike/resource/background/800_3_a_loading.tga'),
+              ('1ITf_T0rF58Fdy91xF6AOP8Vcs6buwJqz', 'cstrike/resource/background/800_3_b_loading.tga'),
+              ('1sGXcGub04fFDmwCp1exJqJ5fXFGpTEV1', 'cstrike/resource/background/800_3_c_loading.tga'),
+              ('13d1MA7DnrnoumyLxftH6_SCLFx1rZ9cp', 'cstrike/resource/background/800_3_d_loading.tga'),
           ])
 
           by_path = {path: fid for fid, path in rows}
@@ -200,7 +215,7 @@ jobs:
 
           Изменения v4:
           - нативное mainui внутри Xash вместо Android-имитации меню;
-          - проверяются BackgroundLayout.txt и все 12 TGA-плиток Steam-фона;
+          - Steam-фон CS 1.6: BackgroundLayout + все 12 TGA-плиток;
           - главное меню: Новая игра / Поиск серверов / Настройки / Выйти;
           - Новая игра открывает нативное окно создания сервера;
           - Поиск серверов открывает нативный браузер mainui;

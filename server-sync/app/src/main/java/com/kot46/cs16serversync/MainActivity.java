@@ -1,6 +1,7 @@
 package com.kot46.cs16serversync;
 
 import android.app.Activity;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
@@ -18,7 +19,6 @@ import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends Activity {
     static final int PICK_XASH = 47;
-    EditText dummy;
     TextView status;
     SharedPreferences prefs;
 
@@ -32,14 +32,14 @@ public class MainActivity extends Activity {
         root.setPadding(dp(18), dp(18), dp(18), dp(24));
         scroll.addView(root);
 
-        TextView title = text("KoT46 — Автоизбранное CS 1.6", 23);
+        TextView title = text("KoT46 — Автоизбранное CS 1.6 v12", 23);
         title.setGravity(Gravity.CENTER);
         root.addView(title, full());
 
         TextView hint = text(
-                "Это приложение для ИГРОКОВ. Один раз выбери папку /storage/emulated/0/xash. " +
-                "После этого список серверов будет автоматически проверяться каждые 15 минут. " +
-                "Когда администратор меняет центральный список, «Избранное» на телефоне обновляется автоматически.", 15);
+                "Приложение для игроков. Один раз выбери папку /storage/emulated/0/xash. " +
+                "Оно получает твой центральный список серверов, обновляет «Избранное» и восстанавливает штатное русское меню CS 1.6. " +
+                "Фоновая проверка выполняется примерно каждые 15 минут. Для мгновенного обновления запускай игру кнопкой ниже.", 15);
         hint.setPadding(0, dp(12), 0, dp(12));
         root.addView(hint, full());
 
@@ -51,8 +51,8 @@ public class MainActivity extends Activity {
         sync.setOnClickListener(v -> syncNow(true));
         root.addView(sync, buttonParams());
 
-        Button open = button("ЗАПУСТИТЬ CS 1.6");
-        open.setOnClickListener(v -> openGame());
+        Button open = button("ОБНОВИТЬ И ЗАПУСТИТЬ CS 1.6");
+        open.setOnClickListener(v -> syncAndOpen());
         root.addView(open, buttonParams());
 
         status = text("", 14);
@@ -122,7 +122,7 @@ public class MainActivity extends Activity {
             chooseXash();
             return;
         }
-        status.setText("Проверяю центральный список...");
+        status.setText("Проверяю центральный список и русское меню...");
         Executors.newSingleThreadExecutor().execute(() -> {
             try {
                 String msg = SyncEngine.sync(getApplicationContext(), force);
@@ -136,6 +136,23 @@ public class MainActivity extends Activity {
         });
     }
 
+    void syncAndOpen() {
+        if (!prefs.contains(SyncEngine.KEY_TREE)) {
+            status.setText("Сначала выбери папку xash.");
+            chooseXash();
+            return;
+        }
+        status.setText("Обновляю серверы и русское меню перед запуском...");
+        Executors.newSingleThreadExecutor().execute(() -> {
+            try {
+                SyncEngine.sync(getApplicationContext(), true);
+                runOnUiThread(this::openGame);
+            } catch (Exception e) {
+                runOnUiThread(() -> status.setText("Не запускаю игру: синхронизация не удалась — " + e.getMessage()));
+            }
+        });
+    }
+
     void refreshStatus() {
         if (!prefs.contains(SyncEngine.KEY_TREE)) {
             status.setText("Первый запуск: выбери папку /storage/emulated/0/xash.");
@@ -144,23 +161,34 @@ public class MainActivity extends Activity {
         String s = prefs.getString(SyncEngine.KEY_STATUS, "Папка xash выбрана. Синхронизация ещё не выполнялась.");
         String t = prefs.getString(SyncEngine.KEY_TIME, "");
         status.setText(s + (t.isEmpty() ? "" : "\nПоследняя проверка: " + t) +
-                "\nАвтопроверка: каждые 15 минут при наличии интернета.");
+                "\nАвтопроверка: примерно каждые 15 минут при наличии интернета.");
     }
 
     void openGame() {
-        String[] packages = {
-                "su.xash.engine.test",
-                "su.xash.engine",
-                "su.xash.cs16client.test",
-                "su.xash.cs16client"
+        String[] clients = {
+                "com.kotyara.cs16client",
+                "com.kotyara.cs16client.test",
+                "su.xash.cs16client",
+                "su.xash.cs16client.test"
         };
-        for (String pkg : packages) {
+        for (String pkg : clients) {
+            try {
+                Intent i = new Intent();
+                i.setComponent(new ComponentName(pkg, "su.xash.cs16client.MainActivity"));
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                startActivity(i);
+                return;
+            } catch (Exception ignored) {}
+        }
+
+        String[] engines = {"su.xash.engine.test", "su.xash.engine"};
+        for (String pkg : engines) {
             Intent i = getPackageManager().getLaunchIntentForPackage(pkg);
             if (i != null) {
                 startActivity(i);
                 return;
             }
         }
-        Toast.makeText(this, "Не нашёл Xash3D/CS16. Запусти игру вручную.", Toast.LENGTH_LONG).show();
+        Toast.makeText(this, "Не нашёл CS16Client/Xash3D. Установи комплект v12.", Toast.LENGTH_LONG).show();
     }
 }

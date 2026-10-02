@@ -350,13 +350,13 @@ def patch_installer():
             for (String line : lines) {
                 String trim = line.trim();
                 if (!foundName && trim.startsWith("name ")) {
-                    fixed.append("name \\"KoT46_ Player\\"\\n");
+                    fixed.append("name ").append((char) 34).append("KoT46_ Player").append((char) 34).append('\n');
                     foundName = true;
                 } else if (!line.isEmpty()) {
                     fixed.append(line).append("\\n");
                 }
             }
-            if (!foundName) fixed.append("name \\"KoT46_ Player\\"\\n");
+            if (!foundName) fixed.append("name ").append((char) 34).append("KoT46_ Player").append((char) 34).append('\n');
             try (FileOutputStream out = new FileOutputStream(playerCfg, false)) {
                 out.write(fixed.toString().getBytes(StandardCharsets.ISO_8859_1));
             }

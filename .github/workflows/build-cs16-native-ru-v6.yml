@@ -1,8 +1,8 @@
-name: Build KoT46 CS16 Central Sync v11
+name: Build KoT46 CS16 Central Sync v12
 
 on:
   push:
-    branches: [ "cs16-central-sync-v11" ]
+    branches: [ "cs16-final-v12" ]
     paths:
       - "server-admin/**"
       - "server-sync/**"
@@ -43,40 +43,64 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
+      - name: Embed verified Russian CS 1.6 UI
+        shell: bash
+        run: |
+          set -euxo pipefail
+          D=server-sync/app/src/main/assets/russian_ui
+          mkdir -p "$D"
+          curl -L --fail --retry 5 --retry-all-errors -A 'Mozilla/5.0 Android'             'https://drive.usercontent.google.com/download?id=1mgwUlaukE9K8X8N2Gl44X14APjDKUg-L&export=download&confirm=t' -o "$D/GameMenu.res"
+          curl -L --fail --retry 5 --retry-all-errors -A 'Mozilla/5.0 Android'             'https://drive.usercontent.google.com/download?id=1VLlW_lUw6fHHVQ29bXsNgt6L2vo_hCH2&export=download&confirm=t' -o "$D/gameui_russian.txt"
+          curl -L --fail --retry 5 --retry-all-errors -A 'Mozilla/5.0 Android'             'https://drive.usercontent.google.com/download?id=1kJcgBuMKbGBODobEZjREWx2vt8WjyRDj&export=download&confirm=t' -o "$D/serverbrowser_russian.txt"
+          curl -L --fail --retry 5 --retry-all-errors -A 'Mozilla/5.0 Android'             'https://drive.usercontent.google.com/download?id=1QyCKJ7l8lxCSZXjT7VNSIP6Nh9ftB2KM&export=download&confirm=t' -o "$D/vgui_russian.txt"
+          curl -L --fail --retry 5 --retry-all-errors -A 'Mozilla/5.0 Android'             'https://drive.usercontent.google.com/download?id=1ws8bwyelvwB7y2yM3N70vMDmWFKMSuEr&export=download&confirm=t' -o "$D/valve_russian.txt"
+          test "$(stat -c%s "$D/GameMenu.res")" -gt 500
+          test "$(stat -c%s "$D/gameui_russian.txt")" -gt 40000
+          test "$(stat -c%s "$D/serverbrowser_russian.txt")" -gt 30000
+          test "$(stat -c%s "$D/vgui_russian.txt")" -gt 10000
+          test "$(stat -c%s "$D/valve_russian.txt")" -gt 20000
+          sha256sum "$D"/*
+
       - name: Build admin APK
         shell: bash
         run: |
           set -euxo pipefail
           cd server-admin
           gradle :app:assembleDebug --stacktrace
-          cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/KoT46-CS16-Server-Admin.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/KoT46-CS16-Server-Admin-v12.apk"
 
-      - name: Build sync APK
+      - name: Build player sync APK
         shell: bash
         run: |
           set -euxo pipefail
           cd server-sync
           gradle :app:assembleDebug --stacktrace
-          cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/KoT46-CS16-Server-Sync.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/KoT46-CS16-Server-Sync-v12.apk"
 
-      - name: Validate
+      - name: Validate APK contents
         shell: bash
         run: |
           set -euxo pipefail
-          unzip -t KoT46-CS16-Server-Admin.apk >/dev/null
-          unzip -t KoT46-CS16-Server-Sync.apk >/dev/null
-          sha256sum KoT46-CS16-Server-Admin.apk KoT46-CS16-Server-Sync.apk > KoT46-CS16-Central-Sync.sha256
-          ls -lh KoT46-CS16-Server-*.apk
-          cat KoT46-CS16-Central-Sync.sha256
+          unzip -t KoT46-CS16-Server-Admin-v12.apk >/dev/null
+          unzip -t KoT46-CS16-Server-Sync-v12.apk >/dev/null
+          for f in GameMenu.res gameui_russian.txt serverbrowser_russian.txt vgui_russian.txt valve_russian.txt; do
+            unzip -l KoT46-CS16-Server-Sync-v12.apk | grep -F "assets/russian_ui/$f"
+          done
+          unzip -p KoT46-CS16-Server-Sync-v12.apk assets/russian_ui/gameui_russian.txt > /tmp/gameui
+          unzip -p KoT46-CS16-Server-Sync-v12.apk assets/russian_ui/serverbrowser_russian.txt > /tmp/serverbrowser
+          test "$(stat -c%s /tmp/gameui)" -gt 40000
+          test "$(stat -c%s /tmp/serverbrowser)" -gt 30000
+          sha256sum KoT46-CS16-Server-Admin-v12.apk KoT46-CS16-Server-Sync-v12.apk > KoT46-CS16-Central-Sync-v12.sha256
+          cat KoT46-CS16-Central-Sync-v12.sha256
 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: KoT46-CS16-Central-Sync-v11
+          name: KoT46-CS16-Central-Sync-v12
           path: |
-            KoT46-CS16-Server-Admin.apk
-            KoT46-CS16-Server-Sync.apk
-            KoT46-CS16-Central-Sync.sha256
+            KoT46-CS16-Server-Admin-v12.apk
+            KoT46-CS16-Server-Sync-v12.apk
+            KoT46-CS16-Central-Sync-v12.sha256
           if-no-files-found: error
           compression-level: 0
           retention-days: 30

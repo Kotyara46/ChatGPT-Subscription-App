@@ -344,14 +344,21 @@ def patch_installer():
                 n = in.read(raw);
             }
             String cfg = new String(raw, 0, Math.max(0, n), StandardCharsets.ISO_8859_1);
-            String wantedName = "name \\"KoT46_ Player\\"";
-            if (cfg.matches("(?s).*(?im)^\\\\s*name\\\\s+\\"[^\\"]*\\".*")) {
-                cfg = cfg.replaceAll("(?im)^\\\\s*name\\\\s+\\"[^\\"]*\\"\\\\s*$", wantedName);
-            } else {
-                cfg += "\\n" + wantedName + "\\n";
+            String[] lines = cfg.replace("\r", "").split("\n", -1);
+            StringBuilder fixed = new StringBuilder();
+            boolean foundName = false;
+            for (String line : lines) {
+                String trim = line.trim();
+                if (!foundName && trim.startsWith("name ")) {
+                    fixed.append("name \\"KoT46_ Player\\"\\n");
+                    foundName = true;
+                } else if (!line.isEmpty()) {
+                    fixed.append(line).append("\\n");
+                }
             }
+            if (!foundName) fixed.append("name \\"KoT46_ Player\\"\\n");
             try (FileOutputStream out = new FileOutputStream(playerCfg, false)) {
-                out.write(cfg.getBytes(StandardCharsets.ISO_8859_1));
+                out.write(fixed.toString().getBytes(StandardCharsets.ISO_8859_1));
             }
         }
 

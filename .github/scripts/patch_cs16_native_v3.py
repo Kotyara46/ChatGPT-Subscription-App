@@ -198,7 +198,7 @@ def patch_installer():
         }
 
         try (FileOutputStream out = new FileOutputStream(new File(c, ".cs16_native_ru_v5"), false)) {
-            out.write("4\n".getBytes(StandardCharsets.US_ASCII));
+            out.write("5\n".getBytes(StandardCharsets.US_ASCII));
         }
     }
 
@@ -219,15 +219,15 @@ def patch_client():
     s = p.read_text(encoding='utf-8')
     replacements = {
         'newGame.SetNameAndStatus( L( "GameUI_NewGame" ), L( "StringsList_189" ) );':
-            'newGame.SetNameAndStatus( L( "CS16_NewGame" ), L( "StringsList_189" ) );',
+            'newGame.SetNameAndStatus( L( "GameUI_GameMenu_NewGame" ), L( "StringsList_189" ) );',
         'newGame.onReleased = UI_NewGame_Menu;':
             'newGame.onReleased = UI_CreateGame_Menu;',
         'multiPlayer.SetNameAndStatus( L( "GameUI_Multiplayer" ), L( "StringsList_198" ) );':
-            'multiPlayer.SetNameAndStatus( L( "CS16_FindServers" ), L( "StringsList_198" ) );',
+            'multiPlayer.SetNameAndStatus( L( "GameUI_GameMenu_FindServers" ), L( "StringsList_198" ) );',
         'configuration.SetNameAndStatus( L( "GameUI_Options" ), L( "StringsList_193" ) );':
-            'configuration.SetNameAndStatus( L( "CS16_Options" ), L( "StringsList_193" ) );',
+            'configuration.SetNameAndStatus( L( "GameUI_GameMenu_Options" ), L( "StringsList_193" ) );',
         'quit.SetNameAndStatus( L( "GameUI_GameMenu_Quit" ), L( "GameUI_QuitConfirmationText" ) );':
-            'quit.SetNameAndStatus( L( "CS16_Quit" ), L( "GameUI_QuitConfirmationText" ) );',
+            'quit.SetNameAndStatus( L( "GameUI_GameMenu_Quit" ), L( "GameUI_QuitConfirmationText" ) );',
     }
     for old, new in replacements.items():
         if old not in s:

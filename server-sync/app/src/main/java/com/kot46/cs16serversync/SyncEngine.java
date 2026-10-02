@@ -35,20 +35,23 @@ public final class SyncEngine {
         String tree = p.getString(KEY_TREE, null);
         if (tree == null) throw new IllegalStateException("Сначала выбери папку xash");
 
+        DocumentFile root = DocumentFile.fromTreeUri(ctx, Uri.parse(tree));
+        if (root == null || !root.canWrite()) throw new IOException("Нет доступа к выбранной папке xash");
+
         String remote = download();
         List<Server> servers = parse(remote);
         if (servers.isEmpty()) throw new IOException("Центральный список серверов пуст");
 
+        // v12: при каждой проверке восстанавливаем штатное русское меню и русский браузер серверов.
+        restoreRussianUi(ctx, root);
+
         String hash = sha256(remote);
         String old = p.getString(KEY_HASH, "");
         if (!force && hash.equals(old)) {
-            String msg = "Без изменений: " + servers.size() + " серверов";
+            String msg = "Без изменений: " + servers.size() + " серверов • русское меню проверено";
             saveStatus(p, msg);
             return msg;
         }
-
-        DocumentFile root = DocumentFile.fromTreeUri(ctx, Uri.parse(tree));
-        if (root == null || !root.canWrite()) throw new IOException("Нет доступа к выбранной папке xash");
 
         DocumentFile platformConfig = dir(dir(root, "platform"), "config");
         DocumentFile config = dir(root, "config");
@@ -56,15 +59,28 @@ public final class SyncEngine {
         String normal = buildServerBrowser(servers);
         String rev = buildRevServerBrowser(servers);
 
-        put(ctx, platformConfig, "ServerBrowser.vdf", normal);
-        put(ctx, platformConfig, "rev_ServerBrowser.vdf", rev);
-        put(ctx, config, "ServerBrowser.vdf", normal);
-        put(ctx, config, "rev_ServerBrowser.vdf", rev);
+        putText(ctx, platformConfig, "ServerBrowser.vdf", normal);
+        putText(ctx, platformConfig, "rev_ServerBrowser.vdf", rev);
+        putText(ctx, config, "ServerBrowser.vdf", normal);
+        putText(ctx, config, "rev_ServerBrowser.vdf", rev);
 
-        String msg = "Обновлено: " + servers.size() + " серверов";
+        String msg = "Обновлено: " + servers.size() + " серверов • русское меню восстановлено";
         p.edit().putString(KEY_HASH, hash).apply();
         saveStatus(p, msg);
         return msg;
+    }
+
+    static void restoreRussianUi(Context ctx, DocumentFile root) throws Exception {
+        DocumentFile cstrike = dir(root, "cstrike");
+        DocumentFile cRes = dir(cstrike, "resource");
+        DocumentFile valve = dir(root, "valve");
+        DocumentFile vRes = dir(valve, "resource");
+
+        putAsset(ctx, cRes, "GameMenu.res", "russian_ui/GameMenu.res");
+        putAsset(ctx, cRes, "gameui_russian.txt", "russian_ui/gameui_russian.txt");
+        putAsset(ctx, cRes, "serverbrowser_russian.txt", "russian_ui/serverbrowser_russian.txt");
+        putAsset(ctx, cRes, "vgui_russian.txt", "russian_ui/vgui_russian.txt");
+        putAsset(ctx, vRes, "valve_russian.txt", "russian_ui/valve_russian.txt");
     }
 
     static void saveStatus(SharedPreferences p, String status) {
@@ -77,7 +93,7 @@ public final class SyncEngine {
         c.setInstanceFollowRedirects(true);
         c.setConnectTimeout(15000);
         c.setReadTimeout(20000);
-        c.setRequestProperty("User-Agent", "Mozilla/5.0 (Android) KoT46-CS16-Sync/1.0");
+        c.setRequestProperty("User-Agent", "Mozilla/5.0 (Android) KoT46-CS16-Sync/1.2");
         c.setRequestProperty("Accept", "text/plain,*/*");
         int code = c.getResponseCode();
         if (code < 200 || code >= 300) throw new IOException("Google Drive HTTP " + code);
@@ -121,14 +137,31 @@ public final class SyncEngine {
         return f;
     }
 
-    static void put(Context ctx, DocumentFile dir, String name, String text) throws Exception {
+    static DocumentFile file(DocumentFile dir, String name) throws Exception {
         DocumentFile f = dir.findFile(name);
         if (f == null) f = dir.createFile("application/octet-stream", name);
         if (f == null) throw new IOException("Не удалось создать " + name);
+        return f;
+    }
+
+    static void putText(Context ctx, DocumentFile dir, String name, String text) throws Exception {
+        DocumentFile f = file(dir, name);
         try (OutputStream out = ctx.getContentResolver().openOutputStream(f.getUri(), "wt")) {
             if (out == null) throw new IOException("Не удалось открыть " + name);
             out.write(text.getBytes(StandardCharsets.UTF_8));
             out.write(0);
+            out.flush();
+        }
+    }
+
+    static void putAsset(Context ctx, DocumentFile dir, String name, String assetPath) throws Exception {
+        DocumentFile f = file(dir, name);
+        try (InputStream in = ctx.getAssets().open(assetPath);
+             OutputStream out = ctx.getContentResolver().openOutputStream(f.getUri(), "wt")) {
+            if (out == null) throw new IOException("Не удалось открыть " + name);
+            byte[] buf = new byte[32768];
+            int n;
+            while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
             out.flush();
         }
     }

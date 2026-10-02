@@ -139,7 +139,7 @@ jobs:
           PY
           wc -l app/src/main/assets/drive-manifest.tsv
           grep -F $'\tcstrike/resource/BackgroundLayout.txt' app/src/main/assets/drive-manifest.tsv
-          grep -F 
+          grep -F 'Core.dll' app/src/main/assets/drive-manifest.tsv
 
       - name: Verify direct Drive file access
         shell: bash
@@ -227,7 +227,7 @@ jobs:
           unzip -l CS16Client-Native-RU.apk | grep -F 'assets/touch_presets/phone_ahsim.cfg'
           unzip -l CS16-Installer-Native-RU.apk | grep -F 'assets/cs16extras/touch/gfx/attack.png'
           unzip -l CS16-Installer-Native-RU.apk | grep -F 'assets/cs16extras/touch/gfx/jump.png'
-          unzip -p CS16-Installer-Native-RU.apk assets/drive-manifest.tsv | grep -F 
+          unzip -p CS16-Installer-Native-RU.apk assets/drive-manifest.tsv | grep -F 'Core.dll'
           strings /tmp/libmenu.so | grep -F 'GameUI_GameMenu_NewGame'
           strings /tmp/libmenu.so | grep -F 'GameUI_GameMenu_FindServers'
 

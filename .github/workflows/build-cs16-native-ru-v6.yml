@@ -1,10 +1,11 @@
-name: Build KoT46 CS16 Server Manager
+name: Build KoT46 CS16 Central Sync v11
 
 on:
   push:
-    branches: [ "cs16-server-manager-v1" ]
+    branches: [ "cs16-central-sync-v11" ]
     paths:
-      - "server-manager/**"
+      - "server-admin/**"
+      - "server-sync/**"
       - ".github/workflows/build-cs16-native-ru-v6.yml"
   workflow_dispatch:
 
@@ -14,7 +15,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
@@ -42,24 +43,40 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      - name: Build server manager
+      - name: Build admin APK
         shell: bash
         run: |
           set -euxo pipefail
-          cd server-manager
+          cd server-admin
           gradle :app:assembleDebug --stacktrace
-          cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/KoT46-CS16-Server-Manager.apk"
-          cd "$GITHUB_WORKSPACE"
-          sha256sum KoT46-CS16-Server-Manager.apk > KoT46-CS16-Server-Manager.sha256
-          unzip -t KoT46-CS16-Server-Manager.apk >/dev/null
+          cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/KoT46-CS16-Server-Admin.apk"
 
-      - name: Upload server manager
+      - name: Build sync APK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd server-sync
+          gradle :app:assembleDebug --stacktrace
+          cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/KoT46-CS16-Server-Sync.apk"
+
+      - name: Validate
+        shell: bash
+        run: |
+          set -euxo pipefail
+          unzip -t KoT46-CS16-Server-Admin.apk >/dev/null
+          unzip -t KoT46-CS16-Server-Sync.apk >/dev/null
+          sha256sum KoT46-CS16-Server-Admin.apk KoT46-CS16-Server-Sync.apk > KoT46-CS16-Central-Sync.sha256
+          ls -lh KoT46-CS16-Server-*.apk
+          cat KoT46-CS16-Central-Sync.sha256
+
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: KoT46-CS16-Server-Manager
+          name: KoT46-CS16-Central-Sync-v11
           path: |
-            KoT46-CS16-Server-Manager.apk
-            KoT46-CS16-Server-Manager.sha256
+            KoT46-CS16-Server-Admin.apk
+            KoT46-CS16-Server-Sync.apk
+            KoT46-CS16-Central-Sync.sha256
           if-no-files-found: error
           compression-level: 0
           retention-days: 30

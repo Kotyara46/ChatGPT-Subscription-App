@@ -86,8 +86,8 @@ jobs:
           curl -L --fail --retry 5 --retry-all-errors -A 'Mozilla/5.0 Android'             'https://drive.usercontent.google.com/download?id=1kJcgBuMKbGBODobEZjREWx2vt8WjyRDj&export=download&confirm=t' -o "$D/serverbrowser_russian.txt"
           curl -L --fail --retry 5 --retry-all-errors -A 'Mozilla/5.0 Android'             'https://drive.usercontent.google.com/download?id=1QyCKJ7l8lxCSZXjT7VNSIP6Nh9ftB2KM&export=download&confirm=t' -o "$D/vgui_russian.txt"
           curl -L --fail --retry 5 --retry-all-errors -A 'Mozilla/5.0 Android'             'https://drive.usercontent.google.com/download?id=1ws8bwyelvwB7y2yM3N70vMDmWFKMSuEr&export=download&confirm=t' -o "$D/valve_russian.txt"
-          grep -a -F '"GameUI_GameMenu_FindServers"' "$D/gameui_russian.txt"
-          grep -a -F '"ServerBrowser_FavoritesTab"' "$D/serverbrowser_russian.txt"
+          iconv -f UTF-16LE -t UTF-8 "$D/gameui_russian.txt" | grep -F '"GameUI_GameMenu_FindServers"'
+          iconv -f UTF-16LE -t UTF-8 "$D/serverbrowser_russian.txt" | grep -F '"ServerBrowser_FavoritesTab"'
 
       - name: Patch and build v13 installer
         shell: bash

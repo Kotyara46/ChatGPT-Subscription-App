@@ -5,7 +5,7 @@ on:
   push:
     branches: [ "main" ]
     paths:
-      - ".github/workflows/build-cs16-native-ru.yml"
+      - ".github/workflows/build-cs16-native-ru-v5.yml"
       - ".github/scripts/patch_cs16_native_v3.py"
 
 permissions:

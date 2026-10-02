@@ -14,6 +14,63 @@ def patch_installer():
     p = Path('app/src/main/java/com/kotyara/chatgptpluscontrol/MainActivity.java')
     s = p.read_text(encoding='utf-8')
 
+
+    # v13: keep only three player APKs. The installer itself performs central favorites sync.
+    old_oncreate = '''        showMainMenu();
+    }
+
+    @Override
+    protected void onResume()'''
+    new_oncreate = '''        showMainMenu();
+        ServerSync.schedule(this);
+    }
+
+    @Override
+    protected void onResume()'''
+    if old_oncreate not in s:
+        raise SystemExit('installer onCreate block missing')
+    s = s.replace(old_oncreate, new_oncreate, 1)
+
+    old_onresume = '''        } else if (stateLine != null) {
+            refreshState();
+        }
+    }
+
+    @Override
+    protected void onDestroy()'''
+    new_onresume = '''        } else if (stateLine != null) {
+            refreshState();
+        }
+        if (hasFileAccess()) {
+            io.execute(() -> {
+                try {
+                    ServerSync.syncNow(getApplicationContext());
+                } catch (Exception ignored) {
+                }
+            });
+        }
+    }
+
+    @Override
+    protected void onDestroy()'''
+    if old_onresume not in s:
+        raise SystemExit('installer onResume block missing')
+    s = s.replace(old_onresume, new_onresume, 1)
+
+    old_install_done = '''                verifyGame();
+                writeMobileConfig();
+                runOnUiThread(() -> {'''
+    new_install_done = '''                verifyGame();
+                writeMobileConfig();
+                try {
+                    ServerSync.syncNow(getApplicationContext());
+                } catch (Exception ignored) {
+                }
+                runOnUiThread(() -> {'''
+    if old_install_done not in s:
+        raise SystemExit('installer completion block missing')
+    s = s.replace(old_install_done, new_install_done, 1)
+
     old = 'runOnUiThread(() -> progress.setText("Получено адресов: " + addresses.size() + ". Проверяю ответы…"));'
     if old in s:
         s = s.replace(
@@ -259,6 +316,50 @@ def patch_installer():
 
 '''
     s = replace_region(s, '    private void writeMobileConfig() {', '    private void launchClient(String server)', method)
+
+    # v13: voice is enabled by default and the clean-install player name is KoT46_ Player.
+    s = s.replace(
+        '                "cl_ticket_generator revemu2013\\\\n";',
+        '                "cl_ticket_generator revemu2013\\\\n" +\\n'
+        '                "voice_enable 1\\\\n" +\\n'
+        '                "voice_modenable 1\\\\n" +\\n'
+        '                "sv_voiceenable 1\\\\n";',
+        1,
+    )
+
+    autoexec_written = '''        try (FileOutputStream out = new FileOutputStream(new File(c, "autoexec.cfg"), false)) {
+            out.write(autoexec.getBytes(StandardCharsets.UTF_8));
+        }
+
+        File res = new File(c, "resource");'''
+    name_init = r'''        try (FileOutputStream out = new FileOutputStream(new File(c, "autoexec.cfg"), false)) {
+            out.write(autoexec.getBytes(StandardCharsets.UTF_8));
+        }
+
+        File playerCfg = new File(c, "config.cfg");
+        if (playerCfg.isFile()) {
+            byte[] raw = new byte[(int) playerCfg.length()];
+            int n;
+            try (FileInputStream in = new FileInputStream(playerCfg)) {
+                n = in.read(raw);
+            }
+            String cfg = new String(raw, 0, Math.max(0, n), StandardCharsets.ISO_8859_1);
+            String wantedName = "name \\"KoT46_ Player\\"";
+            if (cfg.matches("(?s).*(?im)^\\\\s*name\\\\s+\\"[^\\"]*\\".*")) {
+                cfg = cfg.replaceAll("(?im)^\\\\s*name\\\\s+\\"[^\\"]*\\"\\\\s*$", wantedName);
+            } else {
+                cfg += "\\n" + wantedName + "\\n";
+            }
+            try (FileOutputStream out = new FileOutputStream(playerCfg, false)) {
+                out.write(cfg.getBytes(StandardCharsets.ISO_8859_1));
+            }
+        }
+
+        File res = new File(c, "resource");'''
+    if autoexec_written not in s:
+        raise SystemExit('generated autoexec block missing')
+    s = s.replace(autoexec_written, name_init, 1)
+
     s = s.replace('Executors.newFixedThreadPool(3)', 'Executors.newFixedThreadPool(2)')
     p.write_text(s, encoding='utf-8')
 

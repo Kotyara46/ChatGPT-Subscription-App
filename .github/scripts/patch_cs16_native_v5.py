@@ -186,7 +186,10 @@ def patch_installer():
                 "addmaster ms3.ip-games.ru:27010 gs\n" +
                 "addmasterstatic https://xash.su/server-list\n" +
                 "cl_advertise_engine_in_name 0\n" +
-                "cl_ticket_generator revemu2013\n";
+                "cl_ticket_generator revemu2013\n" +
+                "voice_enable 1\n" +
+                "voice_modenable 1\n" +
+                "sv_voiceenable 1\n";
         try (FileOutputStream out = new FileOutputStream(new File(c, "autoexec.cfg"), false)) {
             out.write(autoexec.getBytes(StandardCharsets.UTF_8));
         }

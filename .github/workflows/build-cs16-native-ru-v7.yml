@@ -136,8 +136,11 @@ jobs:
       - name: Upload final 3-file player pack
         uses: actions/upload-artifact@v4
         with:
-          name: CS16-Android-KoT46-PLAYER-v13-3FILES
-          path: CS16-Android-KoT46-PLAYER-v13-3FILES.zip
+          name: CS16-Android-KoT46-PLAYER-v13-3FILES-DIRECT
+          path: |
+            Xash3D-FWGS-Engine.apk
+            CS16Client-Native-RU.apk
+            CS16-Installer-Native-RU.apk
           if-no-files-found: error
           compression-level: 0
           retention-days: 30

@@ -1,12 +1,13 @@
-name: Build CS16 Native RU v7
+name: Build CS16 KoT46 Player 3 Files v13
 
 on:
-  workflow_dispatch:
   push:
-    branches: [ "main" ]
+    branches: [ "cs16-player-3files-v13" ]
     paths:
       - ".github/workflows/build-cs16-native-ru-v7.yml"
       - ".github/scripts/patch_cs16_native_v5.py"
+      - "app/**"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,13 +15,13 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 60
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
-      - name: Checkout installer
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -29,193 +30,115 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Android SDK and tools
+      - name: Install Android SDK
         shell: bash
         run: |
           set -euxo pipefail
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platform-tools" "platforms;android-35" "platforms;android-36" "build-tools;35.0.0" "ndk;28.2.13676358"
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
           sudo apt-get update
-          sudo apt-get install -y ccache zip
-          python3 -m pip install --disable-pip-version-check 'git+https://github.com/wkentaro/gdown.git@main'
+          sudo apt-get install -y zip unzip
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
 
-      - name: Reuse verified v5 Drive manifest
+      - name: Download last working player pack
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euxo pipefail
-          mkdir -p app/src/main/assets /tmp/v5artifact /tmp/v5pack
-          gh run download 36974945817 -n CS16-Android-Native-RU-v5 -D /tmp/v5artifact
-          unzip -q /tmp/v5artifact/CS16-Android-Native-RU-v5.zip -d /tmp/v5pack
-          unzip -p /tmp/v5pack/CS16-Installer-Native-RU.apk assets/drive-manifest.tsv > app/src/main/assets/drive-manifest.tsv
-          grep -F $'\tcstrike/liblist.gam' app/src/main/assets/drive-manifest.tsv
-          grep -F $'\tcstrike/resource/BackgroundLayout.txt' app/src/main/assets/drive-manifest.tsv
-          if ! grep -q $'\tCore.dll$' app/src/main/assets/drive-manifest.tsv; then
-            printf '1PV5GUgfonM6_igHiM4hdeUb4imW4kiQ4\tCore.dll\n' >> app/src/main/assets/drive-manifest.tsv
-          fi
-          grep -F $'\tCore.dll' app/src/main/assets/drive-manifest.tsv
-          test "$(wc -l < app/src/main/assets/drive-manifest.tsv)" -gt 4500
+          curl -L --fail --retry 6 --retry-all-errors -A 'Mozilla/5.0 Android'             'https://drive.usercontent.google.com/download?id=1n_u8dntJKzeJDDcgF05sZsbgyBBqL6hb&export=download&confirm=t'             -o /tmp/v12.zip
+          test "$(stat -c%s /tmp/v12.zip)" -gt 90000000
+          unzip -t /tmp/v12.zip >/dev/null
+          mkdir -p /tmp/v12
+          unzip -q /tmp/v12.zip -d /tmp/v12
+          test -f /tmp/v12/CS16-Installer-Native-RU.apk
+          test -f /tmp/v12/CS16Client-Native-RU.apk
+          test -f /tmp/v12/Xash3D-FWGS-Engine.apk
 
-      - name: Verify direct Drive file access
+      - name: Reuse verified game manifest and KoT46 touch/background assets
         shell: bash
         run: |
           set -euxo pipefail
-          FILE_ID="$(awk -F '\t' '$2=="cstrike/liblist.gam" {print $1}' app/src/main/assets/drive-manifest.tsv)"
-          test -n "$FILE_ID"
-          curl -L --fail --retry 4 --retry-all-errors \
-            -A 'Mozilla/5.0 (Android) CS16-Native-RU/4.0' \
-            "https://drive.usercontent.google.com/download?id=${FILE_ID}&export=download&confirm=t" \
-            -o /tmp/liblist.gam
-          grep -a -F 'Counter-Strike' /tmp/liblist.gam
-
-      - name: Patch and build installer
-        shell: bash
-        run: |
-          set -euxo pipefail
-          rm -rf /tmp/cs16-assets
-          git clone https://github.com/Velaron/cs16-client.git /tmp/cs16-assets
-          cd /tmp/cs16-assets
-          git checkout e30e27c3bd890f731ad7921d9c876d171aea4b32
+          rm -rf app/src/main/assets
+          mkdir -p app/src/main/assets/cs16extras app/src/main/assets/russian_ui
+          unzip -p /tmp/v12/CS16-Installer-Native-RU.apk assets/drive-manifest.tsv > app/src/main/assets/drive-manifest.tsv
+          rm -rf /tmp/oldassets
+          mkdir -p /tmp/oldassets
+          cd /tmp/oldassets
+          unzip -q /tmp/v12/CS16-Installer-Native-RU.apk 'assets/cs16extras/*'
           cd "$GITHUB_WORKSPACE"
-          rm -rf app/src/main/assets/cs16extras
-          mkdir -p app/src/main/assets/cs16extras
-          cp -a /tmp/cs16-assets/3rdparty/cs16client-extras/touch app/src/main/assets/cs16extras/
-          cp -a /tmp/cs16-assets/3rdparty/cs16client-extras/touch.cfg app/src/main/assets/cs16extras/
-          cp -a /tmp/cs16-assets/3rdparty/cs16client-extras/touch_presets app/src/main/assets/cs16extras/
-          test -f app/src/main/assets/cs16extras/touch/gfx/attack.png
-          test -f app/src/main/assets/cs16extras/touch/gfx/jump.png
-          test -f app/src/main/assets/cs16extras/touch/gfx/reload.png
+          cp -a /tmp/oldassets/assets/cs16extras/. app/src/main/assets/cs16extras/
+          test "$(wc -l < app/src/main/assets/drive-manifest.tsv)" -gt 4500
+          test -f app/src/main/assets/cs16extras/touch/gfx/voicechat.png
+          grep -F '+voicerecord' app/src/main/assets/cs16extras/touch.cfg
+          test "$(find app/src/main/assets/cs16extras/resource/background -name '*.tga' | wc -l)" -eq 12
+
+      - name: Embed verified Russian menu files
+        shell: bash
+        run: |
+          set -euxo pipefail
+          D=app/src/main/assets/russian_ui
+          curl -L --fail --retry 5 --retry-all-errors -A 'Mozilla/5.0 Android'             'https://drive.usercontent.google.com/download?id=1mgwUlaukE9K8X8N2Gl44X14APjDKUg-L&export=download&confirm=t' -o "$D/GameMenu.res"
+          curl -L --fail --retry 5 --retry-all-errors -A 'Mozilla/5.0 Android'             'https://drive.usercontent.google.com/download?id=1VLlW_lUw6fHHVQ29bXsNgt6L2vo_hCH2&export=download&confirm=t' -o "$D/gameui_russian.txt"
+          curl -L --fail --retry 5 --retry-all-errors -A 'Mozilla/5.0 Android'             'https://drive.usercontent.google.com/download?id=1kJcgBuMKbGBODobEZjREWx2vt8WjyRDj&export=download&confirm=t' -o "$D/serverbrowser_russian.txt"
+          curl -L --fail --retry 5 --retry-all-errors -A 'Mozilla/5.0 Android'             'https://drive.usercontent.google.com/download?id=1QyCKJ7l8lxCSZXjT7VNSIP6Nh9ftB2KM&export=download&confirm=t' -o "$D/vgui_russian.txt"
+          curl -L --fail --retry 5 --retry-all-errors -A 'Mozilla/5.0 Android'             'https://drive.usercontent.google.com/download?id=1ws8bwyelvwB7y2yM3N70vMDmWFKMSuEr&export=download&confirm=t' -o "$D/valve_russian.txt"
+          grep -a -F '"GameUI_GameMenu_FindServers"' "$D/gameui_russian.txt"
+          grep -a -F '"ServerBrowser_FavoritesTab"' "$D/serverbrowser_russian.txt"
+
+      - name: Patch and build v13 installer
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 -m py_compile .github/scripts/patch_cs16_native_v5.py
           python3 .github/scripts/patch_cs16_native_v5.py installer
           gradle :app:assembleDebug --stacktrace
           cp app/build/outputs/apk/debug/app-debug.apk CS16-Installer-Native-RU.apk
 
-      - name: Clone and patch CS16Client native UI
+      - name: Reuse working engine and client
         shell: bash
         run: |
           set -euxo pipefail
-          git clone https://github.com/Velaron/cs16-client.git cs16
-          cd cs16
-          git checkout e30e27c3bd890f731ad7921d9c876d171aea4b32
-          git submodule update --init --recursive --depth 1
-          cd ..
-          python3 .github/scripts/patch_cs16_native_v5.py client
+          cp /tmp/v12/CS16Client-Native-RU.apk .
+          cp /tmp/v12/Xash3D-FWGS-Engine.apk .
 
-      - name: Build patched CS16Client
-        working-directory: cs16/android
-        shell: bash
-        run: |
-          set -euxo pipefail
-          chmod +x gradlew
-          rm -rf app/src/main/assets
-          mkdir -p app/src/main/assets
-          cp -a ../3rdparty/cs16client-extras/. app/src/main/assets/
-          test -f app/src/main/assets/touch/gfx/attack.png
-          test -f app/src/main/assets/touch/gfx/jump.png
-          test -f app/src/main/assets/touch_presets/phone_ahsim.cfg
-          ./gradlew assembleGitDebug --stacktrace
-          cp app/build/outputs/apk/git/debug/app-git-debug.apk "$GITHUB_WORKSPACE/CS16Client-Native-RU.apk"
-
-      - name: Download current Xash3D FWGS
-        shell: bash
-        run: |
-          set -euxo pipefail
-          curl -L --fail --retry 5 --retry-all-errors \
-            -o Xash3D-FWGS-Native-RU.apk \
-            https://github.com/FWGS/xash3d-fwgs/releases/download/continuous/xash3d-fwgs-android.apk
-          test "$(stat -c%s Xash3D-FWGS-Native-RU.apk)" -gt 30000000
-
-      - name: Validate APKs and patched native menu
+      - name: Validate v13
         shell: bash
         run: |
           set -euxo pipefail
           unzip -t CS16-Installer-Native-RU.apk >/dev/null
           unzip -t CS16Client-Native-RU.apk >/dev/null
-          unzip -t Xash3D-FWGS-Native-RU.apk >/dev/null
-          unzip -l CS16-Installer-Native-RU.apk | grep -F 'assets/drive-manifest.tsv'
-          unzip -l CS16Client-Native-RU.apk | grep -F 'lib/arm64-v8a/libmenu_android_arm64.so'
-          unzip -l CS16Client-Native-RU.apk | grep -F 'lib/arm64-v8a/libclient_android_arm64.so'
-          unzip -l CS16Client-Native-RU.apk | grep -F 'lib/arm64-v8a/libyapb_android_arm64.so'
-          unzip -p CS16Client-Native-RU.apk lib/arm64-v8a/libmenu_android_arm64.so > /tmp/libmenu.so
-          unzip -l CS16Client-Native-RU.apk | grep -F 'assets/touch/gfx/attack.png'
-          unzip -l CS16Client-Native-RU.apk | grep -F 'assets/touch/gfx/jump.png'
-          unzip -l CS16Client-Native-RU.apk | grep -F 'assets/touch/gfx/reload.png'
-          unzip -l CS16Client-Native-RU.apk | grep -F 'assets/touch_presets/phone_ahsim.cfg'
-          unzip -p CS16Client-Native-RU.apk assets/touch.cfg | grep -F 'touch_addbutton "use" "#E" "+use"'
-          unzip -p CS16Client-Native-RU.apk assets/touch.cfg | grep -F '"toggleconsole"'
-          strings /tmp/libmenu.so | grep -F 'CS16_PlayerSetup'
-          strings /tmp/libmenu.so | grep -F 'CS16_Crosshair'
-          unzip -l CS16-Installer-Native-RU.apk | grep -F 'assets/cs16extras/touch/gfx/attack.png'
-          unzip -l CS16-Installer-Native-RU.apk | grep -F 'assets/cs16extras/touch/gfx/jump.png'
-          unzip -l CS16-Installer-Native-RU.apk | grep -F 'assets/cs16extras/touch/gfx/reload.png'
-          unzip -p CS16-Installer-Native-RU.apk assets/drive-manifest.tsv | grep -F 'Core.dll'
-          strings /tmp/libmenu.so | grep -F 'GameUI_GameMenu_NewGame'
-          strings /tmp/libmenu.so | grep -F 'GameUI_GameMenu_FindServers'
+          unzip -t Xash3D-FWGS-Engine.apk >/dev/null
+          unzip -l CS16-Installer-Native-RU.apk | grep -F 'assets/russian_ui/GameMenu.res'
+          unzip -l CS16-Installer-Native-RU.apk | grep -F 'assets/russian_ui/gameui_russian.txt'
+          unzip -l CS16-Installer-Native-RU.apk | grep -F 'assets/russian_ui/serverbrowser_russian.txt'
+          unzip -l CS16-Installer-Native-RU.apk | grep -F 'assets/cs16extras/touch/gfx/voicechat.png'
+          unzip -l CS16-Installer-Native-RU.apk | grep -F 'assets/cs16extras/resource/background/800_3_d_loading.tga'
+          unzip -p CS16-Installer-Native-RU.apk classes.dex > /tmp/classes.dex
+          strings /tmp/classes.dex | grep -F 'KoT46_ Player'
+          strings /tmp/classes.dex | grep -F 'voice_enable 1'
+          strings /tmp/classes.dex | grep -F '1zNEmEf6kgGxZKRER-mlrnsVODvIx7QX_'
+          strings /tmp/classes.dex | grep -F 'ServerSync'
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump xmltree CS16-Installer-Native-RU.apk --file AndroidManifest.xml | grep -F 'ServerSyncJob'
 
-      - name: Package corrected build
+      - name: Package exactly three player files
         shell: bash
         run: |
           set -euxo pipefail
-          cat > УСТАНОВКА.txt <<'EOF'
-          COUNTER-STRIKE 1.6 ANDROID — NATIVE RU v7
+          rm -f CS16-Android-KoT46-PLAYER-v13-3FILES.zip
+          zip -9 CS16-Android-KoT46-PLAYER-v13-3FILES.zip             Xash3D-FWGS-Engine.apk             CS16Client-Native-RU.apk             CS16-Installer-Native-RU.apk
+          test "$(unzip -Z1 CS16-Android-KoT46-PLAYER-v13-3FILES.zip | wc -l)" -eq 3
+          unzip -Z1 CS16-Android-KoT46-PLAYER-v13-3FILES.zip
+          sha256sum CS16-Android-KoT46-PLAYER-v13-3FILES.zip             Xash3D-FWGS-Engine.apk CS16Client-Native-RU.apk CS16-Installer-Native-RU.apk
 
-          1. Удали старый CS16Client и старый установщик. Xash3D можно обновить поверх.
-          2. Установи Xash3D-FWGS-Native-RU.apk.
-          3. Установи CS16Client-Native-RU.apk.
-          4. Установи CS16-Installer-Native-RU.apk и открой его.
-          5. Разреши доступ ко всем файлам и нажми «Установить / восстановить игру».
-          6. Дождись сообщения ГОТОВО и запускай Counter-Strike 1.6.
-
-          Изменения v7:
-          - добавлена отдельная сенсорная кнопка E для +use;
-          - кнопка CMD MENU теперь открывает настоящую консоль;
-          - Xash запускается с -console, поэтому консоль разрешена сразу;
-          - в «Настройки» добавлены «Игрок / ник» и «Прицел»;
-          - смена ника сохраняется через штатный cvar name;
-          - настройка прицела использует штатные cl_crosshair_* / xhair_*;
-          - доступны управление, touch, аудио и видео через нативное mainui;
-          - нативное mainui внутри Xash вместо Android-имитации меню;
-          - Steam-фон CS 1.6: BackgroundLayout + все 12 TGA-плиток;
-          - исправлен кик ReChecker «Fake client [#2]»: Core.dll из твоего набора ставится в /xash;
-          - touch-текстуры дополнительно копируются на диск в /xash/cstrike/touch;
-          - исправлены пропавшие touch-кнопки: текстуры и пресеты теперь внутри APK и на диске;
-          - главное меню использует штатные русские GameUI-токены;
-          - русифицированы выбор команды/класса и основные меню покупки;
-          - браузер серверов использует GoldSrc master 27011 + резервные мастеры;
-          - главное меню: Новая игра / Поиск серверов / Настройки / Выйти;
-          - Новая игра открывает нативное окно создания сервера;
-          - Поиск серверов открывает нативный браузер mainui;
-          - ui_language принудительно russian;
-          - убирается xash.su master и добавляются GoldSrc master-серверы Valve;
-          - Hazard Course скрыт, отсутствующий tr_1 отключён.
-          EOF
-
-          sha256sum CS16-Installer-Native-RU.apk CS16Client-Native-RU.apk Xash3D-FWGS-Native-RU.apk > SHA256SUMS.txt
-          zip -9 CS16-Android-Native-RU-v7.zip \
-            CS16-Installer-Native-RU.apk \
-            CS16Client-Native-RU.apk \
-            Xash3D-FWGS-Native-RU.apk \
-            УСТАНОВКА.txt SHA256SUMS.txt
-          cat SHA256SUMS.txt
-          ls -lh *.apk CS16-Android-Native-RU-v7.zip
-
-      - name: Upload corrected Android pack
+      - name: Upload final 3-file player pack
         uses: actions/upload-artifact@v4
         with:
-          name: CS16-Android-Native-RU-v7
-          path: |
-            CS16-Android-Native-RU-v7.zip
-            CS16-Installer-Native-RU.apk
-            CS16Client-Native-RU.apk
-            Xash3D-FWGS-Native-RU.apk
-            УСТАНОВКА.txt
-            SHA256SUMS.txt
+          name: CS16-Android-KoT46-PLAYER-v13-3FILES
+          path: CS16-Android-KoT46-PLAYER-v13-3FILES.zip
           if-no-files-found: error
           compression-level: 0
           retention-days: 30

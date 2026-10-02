@@ -1,4 +1,4 @@
-name: Build KoT46 CS16 Central Sync v12
+name: Build KoT46 CS16 Final v12
 
 on:
   push:
@@ -15,7 +15,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
@@ -90,17 +90,131 @@ jobs:
           unzip -p KoT46-CS16-Server-Sync-v12.apk assets/russian_ui/serverbrowser_russian.txt > /tmp/serverbrowser
           test "$(stat -c%s /tmp/gameui)" -gt 40000
           test "$(stat -c%s /tmp/serverbrowser)" -gt 30000
-          sha256sum KoT46-CS16-Server-Admin-v12.apk KoT46-CS16-Server-Sync-v12.apk > KoT46-CS16-Central-Sync-v12.sha256
-          cat KoT46-CS16-Central-Sync-v12.sha256
 
-      - name: Upload
+      - name: Prepare final player pack
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf player_v12
+          mkdir -p player_v12
+          curl -L --fail --retry 5 --retry-all-errors -A 'Mozilla/5.0 Android'             'https://drive.usercontent.google.com/download?id=1kShy1KB0lGr_xNqDgi-cNGoPkY5Z-cAK&export=download&confirm=t'             -o /tmp/v11.zip
+          test "$(stat -c%s /tmp/v11.zip)" -gt 90000000
+          unzip -q /tmp/v11.zip -d player_v12
+          rm -f player_v12/KoT46-CS16-Server-Sync.apk player_v12/УСТАНОВКА_v11.txt player_v12/SHA256SUMS.txt
+          cp KoT46-CS16-Server-Sync-v12.apk player_v12/
+          rm -rf player_v12/РУССКОЕ_МЕНЮ_BACKUP
+          mkdir -p player_v12/РУССКОЕ_МЕНЮ_BACKUP
+          cp server-sync/app/src/main/assets/russian_ui/* player_v12/РУССКОЕ_МЕНЮ_BACKUP/
+          curl -L --fail --retry 5 --retry-all-errors -A 'Mozilla/5.0 Android'             'https://drive.usercontent.google.com/download?id=1zNEmEf6kgGxZKRER-mlrnsVODvIx7QX_&export=download&confirm=t'             -o player_v12/ЦЕНТРАЛЬНЫЕ_СЕРВЕРЫ_ПРИМЕР.txt
+          cat > player_v12/УСТАНОВКА_v12.txt <<'EOF'
+          COUNTER-STRIKE 1.6 ANDROID — KoT46 FINAL v12
+
+          1. Установи Xash3D-FWGS-Engine.apk.
+          2. Установи CS16Client-Native-RU.apk.
+          3. Установи CS16-Installer-Native-RU.apk.
+          4. В Installer разреши доступ к файлам и нажми «Установить / восстановить игру».
+          5. Дождись «ГОТОВО».
+          6. Установи KoT46-CS16-Server-Sync-v12.apk.
+          7. В Sync v12 один раз выбери: Внутренняя память / xash.
+          8. Нажми «СИНХРОНИЗИРОВАТЬ СЕЙЧАС».
+          9. Для игры используй «ОБНОВИТЬ И ЗАПУСТИТЬ CS 1.6».
+
+          В v12:
+          - ник KoT46_ Player;
+          - фон KoT46 DESIGN;
+          - микрофон / +voicerecord;
+          - кнопка E / +use и консоль;
+          - штатное русское меню и русский браузер серверов;
+          - центральное Избранное от администратора;
+          - фоновая проверка примерно каждые 15 минут;
+          - Sync v12 при каждой проверке восстанавливает GameMenu.res,
+            gameui_russian.txt, serverbrowser_russian.txt, vgui_russian.txt и valve_russian.txt.
+          EOF
+          cat > player_v12/ПРОВЕРКА_РУССКОГО_МЕНЮ.txt <<'EOF'
+          Главное меню:
+          Возобновить игру
+          Отключиться
+          Список игроков
+          Новая игра
+          Найти серверы
+          Настройки
+          Выход
+
+          Серверы:
+          Интернет
+          Избранное
+          История
+          Зритель
+          Локальная сеть
+          Друзья
+          Фильтры
+          Добавить данный сервер
+          Добавить
+          Обновить
+          Подкл.
+
+          Колонки:
+          Игроки / Серверы / Игра / Карта / Пинг
+          EOF
+          (
+            cd player_v12
+            sha256sum Xash3D-FWGS-Engine.apk CS16Client-Native-RU.apk CS16-Installer-Native-RU.apk               KoT46-CS16-Server-Sync-v12.apk KoT46-Design-background.jpg РУССКОЕ_МЕНЮ_BACKUP/* > SHA256SUMS.txt
+          )
+          unzip -t player_v12/CS16-Installer-Native-RU.apk >/dev/null
+          unzip -t player_v12/CS16Client-Native-RU.apk >/dev/null
+          unzip -t player_v12/Xash3D-FWGS-Engine.apk >/dev/null
+          unzip -t player_v12/KoT46-CS16-Server-Sync-v12.apk >/dev/null
+          ls -lh player_v12
+
+      - name: Prepare admin pack
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf admin_v12
+          mkdir -p admin_v12
+          cp KoT46-CS16-Server-Admin-v12.apk admin_v12/
+          cp player_v12/ЦЕНТРАЛЬНЫЕ_СЕРВЕРЫ_ПРИМЕР.txt admin_v12/KoT46-servers.txt
+          cat > admin_v12/АДМИН_ИНСТРУКЦИЯ_v12.txt <<'EOF'
+          KoT46 — управление общим Избранным CS 1.6
+
+          1. Установи KoT46-CS16-Server-Admin-v12.apk только себе.
+          2. Первый раз выбери на Google Диске существующий файл KoT46-servers.txt
+             из папки Half-Life.
+          3. Формат строк: IP:PORT | название сервера
+          4. Нажми «СОХРАНИТЬ ДЛЯ ВСЕХ ИГРОКОВ».
+          5. Игроки получат изменения автоматически или сразу через
+             «СИНХРОНИЗИРОВАТЬ СЕЙЧАС» / «ОБНОВИТЬ И ЗАПУСТИТЬ CS 1.6».
+
+          ВАЖНО: не удаляй KoT46-servers.txt и не создавай вместо него новый файл:
+          Sync v12 привязан к ID текущего центрального файла.
+          EOF
+          (cd admin_v12 && sha256sum KoT46-CS16-Server-Admin-v12.apk KoT46-servers.txt > SHA256SUMS.txt)
+
+      - name: Upload final player pack
         uses: actions/upload-artifact@v4
         with:
-          name: KoT46-CS16-Central-Sync-v12
+          name: CS16-Android-Native-RU-v12-KoT46-FINAL-CENTRAL-SYNC
+          path: player_v12/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Upload admin pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: KoT46-CS16-ADMIN-v12
+          path: admin_v12/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Upload v12 APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: KoT46-CS16-v12-APKs
           path: |
             KoT46-CS16-Server-Admin-v12.apk
             KoT46-CS16-Server-Sync-v12.apk
-            KoT46-CS16-Central-Sync-v12.sha256
           if-no-files-found: error
           compression-level: 0
           retention-days: 30

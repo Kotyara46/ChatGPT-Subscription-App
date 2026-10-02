@@ -1,0 +1,112 @@
+name: Build CS16 Hotfix RU v6
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+    paths:
+      - ".github/workflows/build-cs16-hotfix-v6.yml"
+      - ".github/scripts/patch_cs16_native_v4.py"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Prepare verified v5 files
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/v5artifact /tmp/v5pack app/src/main/assets
+          gh run download 36974945817 -n CS16-Android-Native-RU-v5 -D /tmp/v5artifact
+          unzip -q /tmp/v5artifact/CS16-Android-Native-RU-v5.zip -d /tmp/v5pack
+          unzip -p /tmp/v5pack/CS16-Installer-Native-RU.apk assets/drive-manifest.tsv > app/src/main/assets/drive-manifest.tsv
+          if ! grep -q 'Core.dll' app/src/main/assets/drive-manifest.tsv; then
+            printf '1PV5GUgfonM6_igHiM4hdeUb4imW4kiQ4\tCore.dll\n' >> app/src/main/assets/drive-manifest.tsv
+          fi
+          grep -F 'Core.dll' app/src/main/assets/drive-manifest.tsv
+          test -f /tmp/v5pack/CS16Client-Native-RU.apk
+          test -f /tmp/v5pack/Xash3D-FWGS-Native-RU.apk
+
+      - name: Embed touch files and patch installer
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/cs16-assets
+          git clone --depth 1 https://github.com/Velaron/cs16-client.git /tmp/cs16-assets
+          mkdir -p app/src/main/assets/cs16extras
+          cp -a /tmp/cs16-assets/3rdparty/cs16client-extras/touch app/src/main/assets/cs16extras/
+          cp -a /tmp/cs16-assets/3rdparty/cs16client-extras/touch.cfg app/src/main/assets/cs16extras/
+          cp -a /tmp/cs16-assets/3rdparty/cs16client-extras/touch_presets app/src/main/assets/cs16extras/
+          python3 .github/scripts/patch_cs16_native_v4.py installer
+
+      - name: Build hotfix installer
+        shell: bash
+        run: |
+          set -euxo pipefail
+          gradle :app:assembleDebug --stacktrace
+          cp app/build/outputs/apk/debug/app-debug.apk CS16-Installer-Native-RU-v6.apk
+          unzip -t CS16-Installer-Native-RU-v6.apk >/dev/null
+          unzip -p CS16-Installer-Native-RU-v6.apk assets/drive-manifest.tsv | grep -F 'Core.dll'
+          unzip -l CS16-Installer-Native-RU-v6.apk | grep -F 'assets/cs16extras/touch/gfx/attack.png'
+          unzip -l CS16-Installer-Native-RU-v6.apk | grep -F 'assets/cs16extras/touch/gfx/jump.png'
+          unzip -l CS16-Installer-Native-RU-v6.apk | grep -F 'assets/cs16extras/touch/gfx/reload.png'
+
+      - name: Package v6
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p CS16-Android-Native-RU-v6
+          cp CS16-Installer-Native-RU-v6.apk CS16-Android-Native-RU-v6/CS16-Installer-Native-RU.apk
+          cp /tmp/v5pack/CS16Client-Native-RU.apk CS16-Android-Native-RU-v6/
+          cp /tmp/v5pack/Xash3D-FWGS-Native-RU.apk CS16-Android-Native-RU-v6/
+          cat > CS16-Android-Native-RU-v6/УСТАНОВКА.txt <<'EOF'
+          CS16 Android Native RU v6 HOTFIX
+
+          Исправлено:
+          - ReChecker kick "Fake client [#2]": Core.dll ставится в /storage/emulated/0/xash/Core.dll
+          - touch-картинки копируются физически в /storage/emulated/0/xash/cstrike/touch
+
+          Установка поверх v5:
+          1. Установи новый CS16-Installer-Native-RU.apk.
+          2. Открой его и нажми "Установить / восстановить игру".
+          3. Игровые файлы заново целиком не качаются.
+          4. Запусти CS 1.6 и проверь тот же сервер.
+          EOF
+          (cd CS16-Android-Native-RU-v6 && zip -9 -r ../CS16-Android-Native-RU-v6.zip .)
+
+      - name: Upload v6
+        uses: actions/upload-artifact@v4
+        with:
+          name: CS16-Android-Native-RU-v6
+          path: |
+            CS16-Android-Native-RU-v6.zip
+            CS16-Android-Native-RU-v6/CS16-Installer-Native-RU.apk
+            CS16-Android-Native-RU-v6/CS16Client-Native-RU.apk
+            CS16-Android-Native-RU-v6/Xash3D-FWGS-Native-RU.apk
+            CS16-Android-Native-RU-v6/УСТАНОВКА.txt
+          retention-days: 30

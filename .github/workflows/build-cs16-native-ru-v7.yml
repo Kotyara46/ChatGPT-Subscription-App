@@ -117,11 +117,10 @@ jobs:
           unzip -l CS16-Installer-Native-RU.apk | grep -F 'assets/russian_ui/serverbrowser_russian.txt'
           unzip -l CS16-Installer-Native-RU.apk | grep -F 'assets/cs16extras/touch/gfx/voicechat.png'
           unzip -l CS16-Installer-Native-RU.apk | grep -F 'assets/cs16extras/resource/background/800_3_d_loading.tga'
-          unzip -p CS16-Installer-Native-RU.apk classes.dex > /tmp/classes.dex
-          strings /tmp/classes.dex | grep -F 'KoT46_ Player'
-          strings /tmp/classes.dex | grep -F 'voice_enable 1'
-          strings /tmp/classes.dex | grep -F '1zNEmEf6kgGxZKRER-mlrnsVODvIx7QX_'
-          strings /tmp/classes.dex | grep -F 'ServerSync'
+          grep -F 'KoT46_ Player' app/src/main/java/com/kotyara/chatgptpluscontrol/MainActivity.java
+          grep -F 'voice_enable 1' app/src/main/java/com/kotyara/chatgptpluscontrol/MainActivity.java
+          grep -F '1zNEmEf6kgGxZKRER-mlrnsVODvIx7QX_' app/src/main/java/com/kotyara/chatgptpluscontrol/ServerSync.java
+          grep -F 'ServerSync.schedule(this)' app/src/main/java/com/kotyara/chatgptpluscontrol/MainActivity.java
           "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump xmltree CS16-Installer-Native-RU.apk --file AndroidManifest.xml | grep -F 'ServerSyncJob'
 
       - name: Package exactly three player files

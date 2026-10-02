@@ -6,8 +6,8 @@ android {
         applicationId 'com.kot46.cs16serversync'
         minSdk 23
         targetSdk 35
-        versionCode 1
-        versionName '1.0'
+        versionCode 12
+        versionName '1.2'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17

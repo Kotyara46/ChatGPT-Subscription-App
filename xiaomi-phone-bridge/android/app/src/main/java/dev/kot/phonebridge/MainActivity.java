@@ -81,7 +81,8 @@ public final class MainActivity extends Activity {
           }
         }
         if(mime==null)mime="application/octet-stream";
-        docs.put(UUID.randomUUID().toString(),new Doc(UUID.randomUUID().toString(),uri,name.substring(0,Math.min(name.length(),180)),mime.substring(0,Math.min(mime.length(),100)),size));
+        String id=UUID.randomUUID().toString();
+        docs.put(id,new Doc(id,uri,name.substring(0,Math.min(name.length(),180)),mime.substring(0,Math.min(mime.length(),100)),size));
       }catch(Exception e){show("Не удалось выбрать один из файлов.");}
     }
     selection.setText("Выбрано файлов: "+docs.size()+"\n"+String.join("\n",names()));

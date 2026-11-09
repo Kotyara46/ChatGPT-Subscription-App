@@ -1,0 +1,23 @@
+name: Test Xiaomi MCP bridge
+on:
+  push:
+    branches: [xiaomi-phone-bridge-build]
+    paths:
+      - 'xiaomi-phone-bridge/remote/**'
+      - '.github/workflows/xiaomi-bridge-test.yml'
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        working-directory: xiaomi-phone-bridge/remote
+        run: pip install -r requirements.txt pytest pytest-asyncio httpx
+      - name: Compile and test server
+        working-directory: xiaomi-phone-bridge/remote
+        run: |
+          python -m py_compile app.py
+          pytest -q test_bridge.py

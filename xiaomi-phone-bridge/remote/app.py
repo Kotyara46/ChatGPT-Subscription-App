@@ -95,7 +95,7 @@ def health():
     return {"ok":True,"service":"xiaomi-phone-bridge"}
 
 @app.post("/device/start")
-def start(body:Start,authorization:str|None=Header(default=None)):
+async def start(body:Start,authorization:str|None=Header(default=None)):
     auth(authorization,PHONE_TOKEN)
     files=catalog(body.files)
     revoke()
@@ -104,7 +104,7 @@ def start(body:Start,authorization:str|None=Header(default=None)):
     return {"session_id":s.id,"expires_after_seconds":HEARTBEAT_TTL}
 
 @app.post("/device/poll")
-def poll(body:Poll,authorization:str|None=Header(default=None)):
+async def poll(body:Poll,authorization:str|None=Header(default=None)):
     auth(authorization,PHONE_TOKEN)
     s=require_session(body.session_id)
     s.files=catalog(body.files)
@@ -120,7 +120,7 @@ def poll(body:Poll,authorization:str|None=Header(default=None)):
     return {"command":{"type":"read_text","request_id":request.request_id,"file_id":request.file_id}}
 
 @app.post("/device/reply")
-def reply(body:Reply,authorization:str|None=Header(default=None)):
+async def reply(body:Reply,authorization:str|None=Header(default=None)):
     auth(authorization,PHONE_TOKEN)
     s=require_session(body.session_id)
     p=s.inflight.pop(body.request_id,None)
@@ -149,7 +149,7 @@ def reply(body:Reply,authorization:str|None=Header(default=None)):
     return {"ok":True}
 
 @app.post("/device/stop")
-def stop(body:Stop,authorization:str|None=Header(default=None)):
+async def stop(body:Stop,authorization:str|None=Header(default=None)):
     auth(authorization,PHONE_TOKEN)
     require_session(body.session_id)
     revoke()

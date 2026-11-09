@@ -1,0 +1,20 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "xiaomi-phone-bridge",
+  "version": "0.2.0",
+  "description": "Read selected documents from a personally owned Android phone only while its owner enables an active session.",
+  "author": {"name": "Private"},
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Xiaomi Phone Bridge",
+        "shortDescription": "Read selected phone files",
+        "longDescription": "Check the phone session, list selected documents, and read an explicitly selected text document. The owner can turn access off at any time.",
+        "developerName": "Private",
+        "category": "Productivity",
+        "capabilities": [],
+        "defaultPrompt": "Проверь, доступен ли мой телефон, и перечисли выбранные файлы."
+      }
+    }
+  }
+}

@@ -1,0 +1,53 @@
+name: Verify Xiaomi OAuth MCP deployment
+on:
+  push:
+    branches: [xiaomi-phone-bridge-build]
+    paths:
+      - '.github/workflows/xiaomi-oauth-live-check.yml'
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test public OAuth metadata and protected endpoint without secrets
+        run: |
+          python - <<'PY'
+          import json,time,urllib.request,urllib.error
+          base="https://xiaomi-phone-bridge.onrender.com"
+          def get(path):
+              with urllib.request.urlopen(base+path,timeout=110) as r: return r.status,json.load(r)
+          # Render Free instances may need to wake up/redeploy; do not use personal tokens here.
+          last=None
+          for i in range(10):
+              try:
+                  status,md=get("/.well-known/oauth-authorization-server")
+                  assert status==200
+                  assert md["issuer"]==base
+                  assert md["authorization_response_iss_parameter_supported"]
+                  assert md["code_challenge_methods_supported"]==["S256"]
+                  assert md["registration_endpoint"]==base+"/oauth/register"
+                  status,pr=get("/.well-known/oauth-protected-resource")
+                  assert pr["resource"]==base+"/mcp"
+                  req=urllib.request.Request(base+"/oauth/register",
+                      json.dumps({"redirect_uris":["https://chatgpt.com/connector_platform_oauth_redirect"]}).encode(),
+                      {"Content-Type":"application/json"},method="POST")
+                  with urllib.request.urlopen(req,timeout=20) as r:
+                      reg=json.load(r)
+                  assert reg["client_id"].startswith("dcr_")
+                  req=urllib.request.Request(base+"/mcp",b'{"jsonrpc":"2.0","id":1,"method":"tools/list"}',{"Content-Type":"application/json"},method="POST")
+                  try:
+                      urllib.request.urlopen(req,timeout=20)
+                      raise AssertionError("Unauthenticated tool access was not denied")
+                  except urllib.error.HTTPError as error:
+                      assert error.code==401
+                      assert "resource_metadata" in error.headers.get("WWW-Authenticate","")
+                  print("Verified live OAuth metadata, DCR registration and 401 security challenge")
+                  break
+              except Exception as e:
+                  last=e
+                  if i==9: raise
+                  print("Live OAuth not ready; checking again:",str(e)[:180])
+                  time.sleep(15)
+          PY

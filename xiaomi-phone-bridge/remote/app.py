@@ -230,3 +230,6 @@ async def mcp(request:Request,authorization:str|None=Header(default=None)):
 
 from oauth_support import setup as setup_oauth
 setup_oauth(app)
+
+from owner_panel import setup as setup_owner_dashboard
+setup_owner_dashboard(app)

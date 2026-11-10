@@ -76,7 +76,7 @@ public final class MainActivity extends Activity {
     Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);
     i.setType("*/*");i.addCategory(Intent.CATEGORY_OPENABLE);
     i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true);
-    i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+    i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
     startActivityForResult(i,PICK);
   }
   @Override protected void onActivityResult(int request,int result,Intent intent){
@@ -99,6 +99,13 @@ public final class MainActivity extends Activity {
           }
         }
         if(mime==null)mime="application/octet-stream";
+        // ACTION_OPEN_DOCUMENT can grant durable access; keep it for the foreground service.
+        // Providers which do not offer persistable grants may still grant temporary access.
+        try {
+          getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } catch(SecurityException unsupported) {
+          state.setText("Для этого файла разрешение может быть временным. При ошибке чтения выбери его снова из Загрузок.");
+        }
         String id=UUID.randomUUID().toString();
         docs.put(id,new BridgeService.Doc(id,uri,name.substring(0,Math.min(name.length(),180)),mime.substring(0,Math.min(mime.length(),100)),size));
       }catch(Exception e){state.setText("Ошибка выбора: "+e.getClass().getSimpleName());}

@@ -110,10 +110,17 @@ public final class BridgeService extends Service {
           byte[] data=read(target.uri);
           for(byte b:data)if(b==0)throw new IOException("Двоичный файл");
           reply.put("base64_data",Base64.encodeToString(data,Base64.NO_WRAP));
-        }catch(Exception e){reply.put("error",String.valueOf(e.getMessage()));}
+        }catch(SecurityException e){reply.put("error","Android не разрешает читать выбранный файл. Отключи доступ и выбери файл снова.");}
+        catch(Exception e){reply.put("error",String.valueOf(e.getMessage()));}
       }
       if(active)post("/device/reply",reply);
-    }catch(Exception e){if(active)status="Связь потеряна; доступ на сервере истечёт через 15 секунд."; }
+    }catch(Exception e){
+      if(active) {
+        String msg=String.valueOf(e.getMessage());
+        if(msg.length()>120)msg=msg.substring(0,120);
+        status="Ошибка обмена с сервером: "+msg;
+      }
+    }
   }
   private byte[] read(Uri uri)throws Exception{
     try(InputStream in=getContentResolver().openInputStream(uri);ByteArrayOutputStream out=new ByteArrayOutputStream()){

@@ -29,6 +29,7 @@ async def test_owner_login_file_read_and_disconnect():
         listing=await c.get("/owner")
         assert listing.status_code==200
         assert "test &lt;safe&gt;.txt" in listing.text
+        assert "Прочитать содержимое" in listing.text
         assert "<safe>" not in listing.text
         reading=asyncio.create_task(c.post("/owner/read",data={"file_id":file_id,"csrf":csrf}))
         await asyncio.sleep(.05)

@@ -54,7 +54,7 @@ def csrf_check(data,csrf):
     if not hmac.compare_digest(data.get("csrf",""),csrf):raise HTTPException(403)
 
 def button(label):
-    return '<button style="padding:12px;border-radius:8px" type="submit">'+esc(label)+'</button>'
+    return '<button style="padding:14px 20px;border:0;border-radius:9px;background:#38bdf8;color:#082f49;font-weight:700;font-size:16px" type="submit">'+esc(label)+'</button>'
 
 def status_page(csrf,message=""):
     from app import live
@@ -66,7 +66,7 @@ def status_page(csrf,message=""):
         content+='<h2>Телефон подключён</h2><p>Разрешено файлов: '+str(len(s.files))+'</p>'
         for f in s.files.values():
             content+='<form method="post" action="/owner/read"><input type="hidden" name="csrf" value="'+esc(csrf)+'">'
-            content+='<input type="hidden" name="file_id" value="'+esc(f.id)+'"><p>'+esc(f.name)+'</p>'+button('Прочитать')+'</form>'
+            content+='<input type="hidden" name="file_id" value="'+esc(f.id)+'"><p><strong>'+esc(f.name)+'</strong> · '+str(f.size)+' байт</p>'+button('Прочитать содержимое')+'</form>'
     content+='<p><a href="/owner" style="color:#93c5fd">Обновить статус</a></p>'
     content+='<form method="post" action="/owner/logout"><input type="hidden" name="csrf" value="'+esc(csrf)+'">'+button('Выйти')+'</form>'
     return secure(content)
@@ -119,6 +119,9 @@ def setup(app):
         try:
             result=await execute_tool("read_selected_text_file",{"file_id":file_id})
         except ValueError as exc:
-            return status_page(csrf,"Ошибка чтения: "+str(exc))
+            detail=str(exc)
+            if detail=="Phone did not respond":
+                detail="Телефон не ответил на запрос чтения. Проверь, что Xiaomi Phone Bridge работает в фоне, затем попробуй ещё раз."
+            return status_page(csrf,"Ошибка чтения: "+detail)
         return secure('<p><a href="/owner" style="color:#93c5fd">Назад к списку</a></p><h2>'+esc(result["name"])+'</h2>'
                       '<pre style="white-space:pre-wrap;overflow-wrap:anywhere">'+esc(result["text"])+'</pre>')

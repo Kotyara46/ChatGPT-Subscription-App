@@ -181,7 +181,7 @@ async def execute_tool(name,args):
     pending=Pending(str(uuid.uuid4()),file_id,asyncio.get_running_loop().create_future())
     s.waiting.append(pending)
     try:
-        raw=await asyncio.wait_for(pending.future,12)
+        raw=await asyncio.wait_for(pending.future,24)
     except asyncio.TimeoutError:
         raise ValueError("Phone did not respond")
     except asyncio.CancelledError:

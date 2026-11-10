@@ -64,6 +64,8 @@ def status_page(csrf,message=""):
         content+='<h2>Телефон сейчас отключён</h2><p>Включи сеанс в приложении Xiaomi.</p>'
     else:
         content+='<h2>Телефон подключён</h2><p>Разрешено файлов: '+str(len(s.files))+'</p>'
+        content+='<p style="color:#93c5fd">Последний отклик телефона: '+str(round(max(0,time.monotonic()-s.last),1))+' сек назад</p>'
+        content+='<p style="color:#9ca3af">Чтение ожидает ответа: '+str(len(s.waiting)+len(s.inflight))+'</p>'
         for f in s.files.values():
             content+='<form method="post" action="/owner/read"><input type="hidden" name="csrf" value="'+esc(csrf)+'">'
             content+='<input type="hidden" name="file_id" value="'+esc(f.id)+'"><p><strong>'+esc(f.name)+'</strong> · '+str(f.size)+' байт</p>'+button('Прочитать содержимое')+'</form>'

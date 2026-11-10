@@ -55,3 +55,23 @@ async def test_deselection_cancels_pending_request():
         assert out["result"]["isError"]
         late=await c.post("/device/reply",headers=D,json={"session_id":sid,"request_id":cmd["request_id"],"file_id":FID,"base64_data":"YQ=="})
         assert late.status_code==409
+
+@pytest.mark.asyncio
+async def test_expired_heartbeat_is_rejected_and_reconnects_on_fresh_start(monkeypatch):
+    from app import HEARTBEAT_TTL, state
+    from unittest.mock import patch
+    from app import time as app_time
+    async with AsyncClient(transport=ASGITransport(app=app),base_url="http://test") as c:
+        oldid=(await c.post("/device/start",headers=D,json={"files":CAT})).json()["session_id"]
+        t=app_time.monotonic()
+        with patch("app.time.monotonic",return_value=t+HEARTBEAT_TTL+1):
+            offline=(await c.post("/device/poll",headers=D,json={"session_id":oldid,"files":CAT}))
+            assert offline.status_code==409
+            assert state["session"] is None
+        new=(await c.post("/device/start",headers=D,json={"files":CAT}))
+        assert new.status_code==200
+        new_id=new.json()["session_id"]
+        assert oldid!=new_id
+        assert (await c.post("/device/poll",headers=D,json={"session_id":new_id,"files":CAT})).status_code==200
+        await c.post("/device/stop",headers=D,json={"session_id":new_id})
+        assert (await c.post("/device/poll",headers=D,json={"session_id":new_id,"files":CAT})).status_code==409

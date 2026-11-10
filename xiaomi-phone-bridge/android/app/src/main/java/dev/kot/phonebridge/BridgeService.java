@@ -27,6 +27,8 @@ public final class BridgeService extends Service {
   private ScheduledExecutorService executor;
   private ScheduledFuture<?> polling;
   private volatile String session="",endpoint="",token="";
+  private int reconnectAttempts=0;
+  private volatile long lastServerContact=0;
   private Map<String,Doc> docs=new LinkedHashMap<>();
 
   public static boolean isActive(){return active;}
@@ -61,18 +63,9 @@ public final class BridgeService extends Service {
       for(Doc d:stagedFiles)docs.put(d.id,d);
       stagedUrl=null;stagedKey=null;stagedFiles=null;
     }
-    executor.execute(()->{
-      try{
-        String idValue=post("/device/start",new JSONObject().put("files",catalog())).getString("session_id");
-        session=idValue;
-        if(!active){try{post("/device/stop",new JSONObject().put("session_id",idValue));}catch(Exception ignored){} return;}
-        status="Доступ включён. Чтобы остановить, открой уведомление.";
-        polling=executor.scheduleWithFixedDelay(this::poll,0,2,TimeUnit.SECONDS);
-      }catch(Exception e){
-        status="Сбой подключения: "+e.getMessage();
-        active=false;stopSelf();
-      }
-    });
+    // Retry startup and recover from Render restarts without leaving an orphan session.
+    // A visible foreground notification remains present and the owner can always stop.
+    if(polling==null)polling=executor.scheduleWithFixedDelay(this::poll,0,3,TimeUnit.SECONDS);
     return START_NOT_STICKY;
   }
   private Notification notifyUser(){
@@ -93,16 +86,34 @@ public final class BridgeService extends Service {
     for(Doc d:docs.values())a.put(new JSONObject().put("id",d.id).put("name",d.name).put("size",d.size).put("mime",d.mime));
     return a;
   }
+  // All network operations run on one worker, never on the UI thread.
   private void poll(){
-    if(!active||session.isEmpty())return;
+    if(!active)return;
     try{
-      JSONObject response=post("/device/poll",new JSONObject().put("session_id",session).put("files",catalog()));
+      if(session.isEmpty()){
+        status="Связь восстанавливается (попытка "+(reconnectAttempts+1)+")...";
+        String newSession=post("/device/start",new JSONObject().put("files",catalog())).getString("session_id");
+        if(!active){
+          // Stop was pressed during a slow Render cold-start; revoke the just-created session.
+          try{post("/device/stop",new JSONObject().put("session_id",newSession));}catch(Exception ignored){}
+          return;
+        }
+        session=newSession;
+        reconnectAttempts=0;
+        lastServerContact=SystemClock.elapsedRealtime();
+        status="Доступ включён. Для отключения открой уведомление.";
+      }
+      String currentSession=session;
+      JSONObject response=post("/device/poll",new JSONObject().put("session_id",currentSession).put("files",catalog()));
       if(!active)return;
+      reconnectAttempts=0;
+      lastServerContact=SystemClock.elapsedRealtime();
+      status="Доступ включён. Соединение с сервером активно.";
       JSONObject cmd=response.optJSONObject("command");
       if(cmd==null||!"read_text".equals(cmd.optString("type")))return;
       String fileId=cmd.optString("file_id"),requestId=cmd.optString("request_id");
       Doc target=docs.get(fileId);
-      JSONObject reply=new JSONObject().put("session_id",session).put("request_id",requestId).put("file_id",fileId);
+      JSONObject reply=new JSONObject().put("session_id",currentSession).put("request_id",requestId).put("file_id",fileId);
       if(target==null)reply.put("error","Файл не выбран");
       else{
         try{
@@ -110,15 +121,47 @@ public final class BridgeService extends Service {
           byte[] data=read(target.uri);
           for(byte b:data)if(b==0)throw new IOException("Двоичный файл");
           reply.put("base64_data",Base64.encodeToString(data,Base64.NO_WRAP));
-        }catch(SecurityException e){reply.put("error","Android не разрешает читать выбранный файл. Отключи доступ и выбери файл снова.");}
-        catch(Exception e){reply.put("error",String.valueOf(e.getMessage()));}
+        }catch(SecurityException e){
+          reply.put("error","Нет разрешения Android. Отключи доступ и выбери файл снова.");
+        }catch(Exception e){
+          reply.put("error",String.valueOf(e.getMessage()));
+        }
       }
-      if(active)post("/device/reply",reply);
+      if(active){
+        try{
+          post("/device/reply",reply);
+          status="Файл обработан; ожидание следующего запроса.";
+          lastServerContact=SystemClock.elapsedRealtime();
+        }catch(IOException e){
+          // A request may already have expired; don't lose the whole active session
+          // when only the individual read request was cancelled.
+          if(!"HTTP 409".equals(e.getMessage()))throw e;
+          status="Ответ на файл опоздал; можно повторить чтение.";
+        }
+      }
+    }catch(IOException e){
+      if(!active)return;
+      String msg=String.valueOf(e.getMessage());
+      if("HTTP 401".equals(msg)||"HTTP 403".equals(msg)){
+        status="Сервер отклонил ключ. Отключи доступ и проверь секрет устройства.";
+        // Never keep trying with invalid credentials.
+        session="";
+        active=false;
+        stopForeground(STOP_FOREGROUND_REMOVE);
+        stopSelf();
+        return;
+      }
+      if("HTTP 409".equals(msg)||"HTTP 410".equals(msg)){
+        session="";
+        status="Сеанс на сервере истёк; автоматически переподключаюсь.";
+      }else{
+        status="Нет связи с сервером: "+msg;
+      }
+      reconnectAttempts=Math.min(reconnectAttempts+1,1000);
     }catch(Exception e){
-      if(active) {
-        String msg=String.valueOf(e.getMessage());
-        if(msg.length()>120)msg=msg.substring(0,120);
-        status="Ошибка обмена с сервером: "+msg;
+      if(active){
+        status="Сбой обмена: "+String.valueOf(e.getMessage());
+        reconnectAttempts=Math.min(reconnectAttempts+1,1000);
       }
     }
   }
@@ -150,7 +193,7 @@ public final class BridgeService extends Service {
     active=false;
     String old=session,host=endpoint,key=token;
     session="";
-    if(polling!=null)polling.cancel(false);
+    if(polling!=null){polling.cancel(false);polling=null;}
     if(executor!=null)executor.shutdownNow();
     if(!old.isEmpty()&&!host.isEmpty()&&!key.isEmpty()){
       new Thread(()->{
@@ -160,7 +203,8 @@ public final class BridgeService extends Service {
         }catch(Exception ignored){}
       },"bridge-stop").start();
     }
-    stagedKey=null;status="Доступ отключён.";
+    synchronized(BridgeService.class){stagedKey=null;stagedUrl=null;stagedFiles=null;}
+    status="Доступ отключён.";
     stopForeground(STOP_FOREGROUND_REMOVE);
     stopSelf();
   }

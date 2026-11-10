@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 LIMIT=262144
 MAX_FILES=30
-HEARTBEAT_TTL=15
+HEARTBEAT_TTL=45
 PHONE_TOKEN=os.environ.get("PHONE_BRIDGE_DEVICE_TOKEN","")
 MCP_TOKEN=os.environ.get("PHONE_BRIDGE_MCP_TOKEN","")
 if len(PHONE_TOKEN)<32 or len(MCP_TOKEN)<32 or PHONE_TOKEN==MCP_TOKEN:
@@ -60,6 +60,8 @@ class Session:
     files:dict=field(default_factory=dict)
     waiting:list=field(default_factory=list)
     inflight:dict=field(default_factory=dict)
+    last_command:float=0.0
+    last_reply:float=0.0
 
 def auth(got,secret):
     if not got or not hmac.compare_digest(got,"Bearer "+secret):
@@ -117,6 +119,7 @@ async def poll(body:Poll,authorization:str|None=Header(default=None)):
         return {"command":None}
     request=s.waiting.pop(0)
     s.inflight[request.request_id]=request
+    s.last_command=time.monotonic()
     return {"command":{"type":"read_text","request_id":request.request_id,"file_id":request.file_id}}
 
 @app.post("/device/reply")
@@ -124,6 +127,7 @@ async def reply(body:Reply,authorization:str|None=Header(default=None)):
     auth(authorization,PHONE_TOKEN)
     s=require_session(body.session_id)
     p=s.inflight.pop(body.request_id,None)
+    s.last_reply=time.monotonic()
     if not p or p.future.done() or p.file_id != body.file_id or p.file_id not in s.files:
         raise HTTPException(409,"Request expired or file deselected")
     if body.error:

@@ -20,6 +20,9 @@ jobs:
           python3 - <<'PY'
           import socket, urllib.request, urllib.error, os, json
           host=os.environ["HOST"]
+          for control in ["example.com","www.cloudflare.com"]:
+              try: print("CONTROL_DNS:",control,socket.getaddrinfo(control,443,type=socket.SOCK_STREAM)[0][4][0])
+              except Exception as e: print("CONTROL_ERROR:",control,type(e).__name__,str(e)[:130])
           try:
               print("DNS:", socket.getaddrinfo(host,443,type=socket.SOCK_STREAM)[0][4][0])
           except Exception as e:

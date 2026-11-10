@@ -76,8 +76,9 @@ jobs:
           export AR_aarch64_linux_android="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
           export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CC_aarch64_linux_android"
           cargo build --locked --release --target aarch64-linux-android
-          mkdir -p ../../app/src/main/jniLibs/arm64-v8a
-          cp target/aarch64-linux-android/release/libngrok_java.so ../../app/src/main/jniLibs/arm64-v8a/
+          mkdir -p ../../../app/src/main/jniLibs/arm64-v8a
+          cp target/aarch64-linux-android/release/libngrok_java.so ../../../app/src/main/jniLibs/arm64-v8a/
+          test -s ../../../app/src/main/jniLibs/arm64-v8a/libngrok_java.so
       - name: Cross-compile ARM64 Cloudflare tunnel binary
         working-directory: phone-use/android/vendor/cloudflared
         run: |
@@ -101,6 +102,26 @@ jobs:
           APK=app/build/outputs/apk/foss/debug/app-foss-debug.apk
           test -s "$APK"
           "$ANDROID_HOME/build-tools/37.0.0/aapt2" dump badging "$APK" | head -15
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose "$APK"
+          unzip -Z1 "$APK" | grep -q '^lib/arm64-v8a/libcloudflared.so
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phone-use-android-arm64-debug-apk
+          path: |
+            phone-use/android/app/build/outputs/apk/foss/debug/app-foss-debug.apk
+            phone-use/android/phone-use-sha256.txt
+          if-no-files-found: error
+
+          unzip -Z1 "$APK" | grep -q '^lib/arm64-v8a/libngrok_java.so
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phone-use-android-arm64-debug-apk
+          path: |
+            phone-use/android/app/build/outputs/apk/foss/debug/app-foss-debug.apk
+            phone-use/android/phone-use-sha256.txt
+          if-no-files-found: error
+
+          echo "Both ARM64 tunnel libraries are packaged and the APK signature verifies."
           sha256sum "$APK" | tee phone-use-sha256.txt
       - uses: actions/upload-artifact@v4
         with:

@@ -1,0 +1,19 @@
+name: Check Xiaomi Phone Bridge public health
+on:
+  push:
+    branches: [xiaomi-phone-bridge-build]
+    paths:
+      - '.github/workflows/xiaomi-health-check.yml'
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check service health without secrets
+        run: |
+          set -euo pipefail
+          echo 'Checking public /health (no phone files or secrets)'
+          result=$(curl --silent --show-error --location --max-time 105 --retry 2 --retry-delay 3 --write-out '\nHTTP_CODE:%{http_code}' https://xiaomi-phone-bridge.onrender.com/health)
+          echo "$result"
+          echo "$result" | grep -q 'HTTP_CODE:200'
+          echo "$result" | grep -q '"ok":true'
+          echo 'Public health endpoint OK'

@@ -156,11 +156,11 @@ async def stop(body:Stop,authorization:str|None=Header(default=None)):
     return {"ok":True}
 
 TOOLS=[
- {"name":"phone_status","description":"Read-only: check whether the owner's phone is connected and access enabled.",
+ {"securitySchemes":[{"type":"oauth2","scopes":["files:read"]}],"name":"phone_status","description":"Read-only: check whether the owner's phone is connected and access enabled.",
   "inputSchema":{"type":"object","properties":{},"additionalProperties":False},"annotations":{"readOnlyHint":True}},
- {"name":"list_selected_files","description":"Read-only: list only files that the owner explicitly selected in the phone app.",
+ {"securitySchemes":[{"type":"oauth2","scopes":["files:read"]}],"name":"list_selected_files","description":"Read-only: list only files that the owner explicitly selected in the phone app.",
   "inputSchema":{"type":"object","properties":{},"additionalProperties":False},"annotations":{"readOnlyHint":True}},
- {"name":"read_selected_text_file","description":"Read-only: request text of one specifically selected file (max 256 KiB) during active consent.",
+ {"securitySchemes":[{"type":"oauth2","scopes":["files:read"]}],"name":"read_selected_text_file","description":"Read-only: request text of one specifically selected file (max 256 KiB) during active consent.",
   "inputSchema":{"type":"object","properties":{"file_id":{"type":"string"}},"required":["file_id"],"additionalProperties":False},
   "annotations":{"readOnlyHint":True}}
 ]
@@ -195,7 +195,8 @@ async def execute_tool(name,args):
 
 @app.post("/mcp")
 async def mcp(request:Request,authorization:str|None=Header(default=None)):
-    auth(authorization,MCP_TOKEN)
+    from oauth_support import authenticate_mcp
+    authenticate_mcp(authorization)
     if "application/json" not in request.headers.get("content-type",""):
         raise HTTPException(415,"JSON required")
     if int(request.headers.get("content-length","0") or 0)>400000:
@@ -226,3 +227,6 @@ async def mcp(request:Request,authorization:str|None=Header(default=None)):
     else:
         return {"jsonrpc":"2.0","id":reqid,"error":{"code":-32601,"message":"Method not found"}}
     return {"jsonrpc":"2.0","id":reqid,"result":out}
+
+from oauth_support import setup as setup_oauth
+setup_oauth(app)

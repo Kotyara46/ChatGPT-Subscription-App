@@ -51,3 +51,5 @@ jobs:
                   print("Live OAuth not ready; checking again:",str(e)[:180])
                   time.sleep(15)
           PY
+
+# Post-Render manual deploy verification: commit 1b52155

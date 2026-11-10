@@ -3,6 +3,8 @@ package dev.kot.phonebridge;
 import android.app.Activity;
 import android.os.Bundle;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -21,6 +23,13 @@ public final class MainActivity extends Activity {
   private TextView state,selection;
   private Button startButton,stopButton;
   private LinearLayout root;
+  private final Handler uiHandler = new Handler(Looper.getMainLooper());
+  private final Runnable statusUpdater = new Runnable() {
+    @Override public void run() {
+      refresh();
+      uiHandler.postDelayed(this, 800);
+    }
+  };
   @Override public void onCreate(Bundle b){
     super.onCreate(b);
     root=new LinearLayout(this);root.setOrientation(1);root.setPadding(24,64,24,32);
@@ -54,7 +63,8 @@ public final class MainActivity extends Activity {
     refresh();
   }
   private void label(String text){TextView v=new TextView(this);v.setText(text);v.setPadding(0,12,0,8);root.addView(v);}
-  @Override protected void onResume(){super.onResume();refresh();}
+  @Override protected void onResume(){super.onResume();uiHandler.removeCallbacks(statusUpdater);uiHandler.post(statusUpdater);}
+  @Override protected void onPause(){uiHandler.removeCallbacks(statusUpdater);super.onPause();}
   private void refresh(){
     if(state==null)return;
     boolean enabled=BridgeService.isActive();

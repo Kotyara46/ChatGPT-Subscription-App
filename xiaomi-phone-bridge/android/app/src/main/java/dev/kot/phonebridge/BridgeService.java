@@ -127,7 +127,7 @@ public final class BridgeService extends Service {
     HttpURLConnection c=(HttpURLConnection)new URL(endpoint+path).openConnection();
     try{
       c.setInstanceFollowRedirects(false);c.setRequestMethod("POST");c.setDoOutput(true);
-      c.setConnectTimeout(4000);c.setReadTimeout(4000);
+      c.setConnectTimeout(15000);c.setReadTimeout(path.equals("/device/start") ? 90000 : 12000);
       c.setRequestProperty("Content-Type","application/json");
       c.setRequestProperty("Authorization","Bearer "+token);
       try(OutputStream out=c.getOutputStream()){out.write(data.toString().getBytes(StandardCharsets.UTF_8));}
